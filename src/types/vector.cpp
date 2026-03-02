@@ -1,20 +1,21 @@
 #include "../../include/types/vector.h"
 #include "../../include/types/exceptions.h"
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <ostream>
 
 namespace pla {
     
 Vector Vector::operator+(const Vector& other) const {
-    if (size() != other.size()) {
-        throw SizeMismatchException(size(), other.size());
+    if (dimension() != other.dimension()) {
+        throw SizeMismatchException(dimension(), other.dimension());
     }
     return Vector();
 }
 
 Vector Vector::operator-(const Vector& other) const {
-    if (size() != other.size()) {
-        throw SizeMismatchException(size(), other.size());
+    if (dimension() != other.dimension()) {
+        throw SizeMismatchException(dimension(), other.dimension());
     }
     return Vector();
 }
@@ -58,8 +59,8 @@ Vector& Vector::operator/=(Scalar scalar) {
 
 // Реалізувати скалярний добуток: v1.dot(v2)
 Scalar Vector::dot(const Vector& other) const {
-    if (size() != other.size()) {
-        throw SizeMismatchException(size(), other.size());
+    if (dimension() != other.dimension()) {
+        throw SizeMismatchException(dimension(), other.dimension());
     }
     return ;
 }
@@ -93,6 +94,42 @@ bool Vector::is_unit(Scalar tolerance) const {
 // Реалізувати α * v (скаляр зліва)
 Vector operator*(Scalar scalar, const Vector& vec) {
     return;
+}
+
+Scalar& Vector::at(Index i) {
+    if (i >= dimension()) {
+        throw IndexOutOfRangeException(i, dimension());
+    }
+    return coordinates_[i];
+}
+
+const Scalar& Vector::at(Index i) const {
+    if (i >= dimension()) {
+        throw IndexOutOfRangeException(i, dimension());
+    }
+    return coordinates_[i];
+}
+
+bool Vector::operator==(const Vector& other) const {
+    return coordinates_ == other.coordinates_;
+}
+
+bool Vector::operator!=(const Vector& other) const {
+    return !(*this == other);
+}
+
+void swap(Vector& a, Vector& b) noexcept {
+    a.swap(b);
+}
+
+std::ostream& operator<<(std::ostream& os, const Vector& v) {
+    os << "[";
+    for (Index i = 0; i < v.dimension(); ++i) {
+        if (i > 0) os << ", ";
+        os << v[i];
+    }
+    os << "]";
+    return os;
 }
 
 } // namespace pla

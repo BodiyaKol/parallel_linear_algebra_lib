@@ -1,6 +1,7 @@
 #pragma once
 
 #include <initializer_list>
+#include <iosfwd>
 #include <vector>
 
 #include "index.h"
@@ -11,39 +12,56 @@ namespace pla {
 class Vector {
 public:
     Vector() = default;
-    explicit Vector(Index n) : data_(n) {}
-    Vector(Index n, Scalar value) : data_(n, value) {}
-    Vector(std::initializer_list<Scalar> init) : data_(init) {}
+    explicit Vector(Index n) : coordinates_(n) {}
+    Vector(Index n, Scalar value) : coordinates_(n, value) {}
+    Vector(std::initializer_list<Scalar> init) : coordinates_(init) {}
 
-    [[nodiscard]] Index size() const noexcept {
-        return data_.size();
+    ~Vector() = default;
+    Vector(const Vector& other) = default;
+    Vector(Vector&& other) noexcept = default;
+    Vector& operator=(const Vector& other) = default;
+    Vector& operator=(Vector&& other) noexcept = default;
+
+    [[nodiscard]] Index dimension() const noexcept {
+        return coordinates_.size();
     }
 
     void resize(Index n) {
-        data_.resize(n);
+        coordinates_.resize(n);
     }
 
     [[nodiscard]] bool empty() const noexcept {
-        return data_.empty();
+        return coordinates_.empty();
     }
 
-    [[nodiscard]] Scalar* data() noexcept {
-        return data_.data();
+    [[nodiscard]] Scalar* coordinates() noexcept {
+        return coordinates_.data();
     }
 
-    [[nodiscard]] const Scalar* data() const noexcept {
-        return data_.data();
+    [[nodiscard]] const Scalar* coordinates() const noexcept {
+        return coordinates_.data();
     }
 
     [[nodiscard]] Scalar& operator[](Index i) noexcept {
-        return data_[i];
+        return coordinates_[i];
     }
 
     [[nodiscard]] const Scalar& operator[](Index i) const noexcept {
-        return data_[i];
+        return coordinates_[i];
     }
 
-    // Операції над векторами
+    [[nodiscard]] Scalar& at(Index i);
+    [[nodiscard]] const Scalar& at(Index i) const;
+
+    auto begin() noexcept { return coordinates_.begin(); }
+    auto end() noexcept { return coordinates_.end(); }
+    auto begin() const noexcept { return coordinates_.begin(); }
+    auto end() const noexcept { return coordinates_.end(); }
+
+    void clear() noexcept { coordinates_.clear(); }
+
+    void swap(Vector& other) noexcept { coordinates_.swap(other.coordinates_); }
+
     Vector operator+(const Vector& other) const;
 
     Vector operator-(const Vector& other) const;
@@ -77,11 +95,18 @@ public:
     // Перевірка чи вектор одиничний (norm ≈ 1)
     [[nodiscard]] bool is_unit(Scalar tolerance = 1e-9) const;
 
+    [[nodiscard]] bool operator==(const Vector& other) const;
+    [[nodiscard]] bool operator!=(const Vector& other) const;
+
 private:
-    std::vector<Scalar> data_;
+    std::vector<Scalar> coordinates_;
 };
 
 // Множення скаляра на вектор зліва: α * v
 Vector operator*(Scalar scalar, const Vector& vec);
+
+void swap(Vector& a, Vector& b) noexcept;
+
+std::ostream& operator<<(std::ostream& os, const Vector& v);
 
 } // namespace pla

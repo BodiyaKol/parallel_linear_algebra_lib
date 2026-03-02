@@ -22,14 +22,14 @@ void test_vector_basics() {
     std::cout << "Тест: базові операції Vector... ";
     
     pla::Vector v{1.0, 2.0, 3.0};
-    assert(v.size() == 3);
+    assert(v.dimension() == 3);
     assert(std::abs(v[0] - 1.0) < 1e-12);
 
     v[1] = 5.0;
     assert(std::abs(v[1] - 5.0) < 1e-12);
     
     pla::Vector v2(4, 2.5);
-    assert(v2.size() == 4);
+    assert(v2.dimension() == 4);
     assert(v2[0] == 2.5);
     
     std::cout << "OK" << std::endl;
@@ -91,7 +91,7 @@ void test_vector_operators_add() {
     
     pla::Vector c = a + b;
     
-    assert(c.size() == 3);
+    assert(c.dimension() == 3);
     assert(c[0] == 5.0);
     assert(c[1] == 7.0);
     assert(c[2] == 9.0);
@@ -183,7 +183,7 @@ void test_matrix_vector_multiply() {
     pla::Vector x = {1.0, 2.0, 3.0};
     pla::Vector y = A * x;
     
-    assert(y.size() == 2);
+    assert(y.dimension() == 2);
     assert(approx_equal(y[0], 14.0)); // 1*1 + 2*2 + 3*3 = 14
     assert(approx_equal(y[1], 32.0)); // 4*1 + 5*2 + 6*3 = 32
     

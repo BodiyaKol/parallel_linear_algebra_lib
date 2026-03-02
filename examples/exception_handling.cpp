@@ -145,12 +145,12 @@ void example_safe_operations() {
     Vector b = {4.0, 5.0};
     
     // ПРАВИЛЬНО: перевірка перед операцією
-    if (a.size() == b.size()) {
-        Vector c = vector_add(a, b);
+    if (a.dimension() == b.dimension()) {
+        Vector c = a + b;
         std::cout << "  Успішно додано вектори" << std::endl;
     } else {
-        std::cout << "  Розміри не співпадають: " << a.size() 
-                  << " != " << b.size() << std::endl;
+        std::cout << "  Розміри не співпадають: " << a.dimension() 
+                  << " != " << b.dimension() << std::endl;
         std::cout << "  Пропускаємо операцію" << std::endl;
     }
 }

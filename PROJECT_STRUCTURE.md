@@ -53,17 +53,24 @@ using Index = std::size_t;
 - `operator+=`, `operator-=`, `operator*=`, `operator/=` - складені оператори
 
 **Методи**:
+- `dimension()` - розмірність вектора (належність до $ \mathbb{R}^n $)
+- `coordinates()` - доступ до масиву координат
 - `dot(const Vector&)` - скалярний добуток
 - `norm()` - Евклідова норма
 - `normalize()` - нормалізація in-place
 - `normalized()` - повертає нормалізовану копію
 - `is_unit()` - перевірка, чи є одиничним
 
-**Конструктори**:
-- `Vector()` - порожній
-- `Vector(Index size)` - заданого розміру
-- `Vector(Index size, Scalar value)` - заповнений значенням
+**Конструктори та Rule of 5**:
+- `Vector()` - порожній вектор
+- `Vector(Index n)` - вектор розмірності n
+- `Vector(Index n, Scalar value)` - заповнений значенням
 - `Vector(std::initializer_list<Scalar>)` - з списку `{1.0, 2.0, 3.0}`
+- Копіюючий конструктор (default)
+- Переміщуючий конструктор (default)
+- Копіюючий оператор присвоєння (default)
+- Переміщуючий оператор присвоєння (default)
+- Деструктор (default)
 
 **Приклад**:
 ```cpp
@@ -72,6 +79,7 @@ Vector b = {4.0, 5.0, 6.0};
 Vector c = a + b;              // {5.0, 7.0, 9.0}
 Scalar dot = a.dot(b);         // 32.0
 Scalar norm = a.norm();        // 3.74
+Index dim = a.dimension();     // 3 (вектор у R^3)
 ```
 
 #### `matrix.h` ⭐
@@ -84,6 +92,8 @@ Scalar norm = a.norm();        // 3.74
 - `operator+=`, `operator-=`, `operator*=`, `operator/=` - складені оператори
 
 **Методи**:
+- `rows()`, `cols()` - розміри матриці
+- `data()` - доступ до масиву елементів
 - `transpose()` - транспонування (повертає нову матрицю)
 - `transpose_inplace()` - транспонування на місці
 - `row(Index)` - отримати рядок як `VectorView`
@@ -93,10 +103,16 @@ Scalar norm = a.norm();        // 3.74
 - `norm()` - норма Фробеніуса
 - `static identity(Index)` - створити одиничну матрицю
 
-**Конструктори**:
+**Конструктори та Rule of 5**:
+- `Matrix()` - порожня матриця
 - `Matrix(Index rows, Index cols)` - заданого розміру
 - `Matrix(Index rows, Index cols, Scalar value)` - заповнена значенням
 - `Matrix(Index rows, Index cols, Scalar value, StorageOrder)` - з вказаним порядком
+- Копіюючий конструктор (default)
+- Переміщуючий конструктор (default)
+- Копіюючий оператор присвоєння (default)
+- Переміщуючий оператор присвоєння (default)
+- Деструктор (default)
 
 **Приклад**:
 ```cpp
@@ -217,16 +233,16 @@ struct ExecutionPolicy { Backend backend; Index thread_count; Index block_size; 
 ```cpp
 Vector Vector::operator+(const Vector& other) const {
     // TODO: Step 1 - перевірка розмірів
-    if (size() != other.size()) {
-        throw SizeMismatchException(size(), other.size());
+    if (dimension() != other.dimension()) {
+        throw SizeMismatchException(dimension(), other.dimension());
     }
     
     // TODO: Step 2 - створити результат
-    Vector result(size());
+    Vector result(dimension());
     
     // TODO: Step 3 - обчислити поелементно
-    for (Index i = 0; i < size(); i++) {
-        result[i] = data_[i] + other.data_[i];
+    for (Index i = 0; i < dimension(); i++) {
+        result[i] = coordinates_[i] + other.coordinates_[i];
     }
     
     // TODO: Step 4 - повернути результат

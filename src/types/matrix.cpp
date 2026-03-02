@@ -3,6 +3,7 @@
 #include "../../include/types/exceptions.h"
 #include <algorithm>
 #include <cmath>
+#include <ostream>
 
 namespace pla {
 
@@ -42,9 +43,8 @@ Matrix Matrix::operator/(Scalar scalar) const {
 
 // Реалізувати множення матриці на вектор: A * v → вектор
 Vector Matrix::operator*(const Vector& vec) const {
-    if (cols() != vec.size()) {
-        throw ShapeMismatchException("Matrix cols (" + std::to_string(cols()) + 
-                                    ") must match vector size (" + std::to_string(vec.size()) + ")");
+    if (cols() != vec.dimension()) {
+        throw ShapeMismatchException(rows(), cols(), vec.dimension(), 1);
     }
     return;
 }
@@ -142,6 +142,50 @@ Scalar Matrix::norm() const {
 // Множення скаляра на матрицю зліва: α * A
 Matrix operator*(Scalar scalar, const Matrix& mat) {
     return mat * scalar;
+}
+
+Scalar& Matrix::at(Index r, Index c) {
+    if (r >= rows() || c >= cols()) {
+        throw IndexOutOfRangeException(r * cols() + c, rows() * cols());
+    }
+    return (*this)(r, c);
+}
+
+const Scalar& Matrix::at(Index r, Index c) const {
+    if (r >= rows() || c >= cols()) {
+        throw IndexOutOfRangeException(r * cols() + c, rows() * cols());
+    }
+    return (*this)(r, c);
+}
+
+bool Matrix::operator==(const Matrix& other) const {
+    return rows_ == other.rows_ && 
+           cols_ == other.cols_ && 
+           order_ == other.order_ && 
+           elements_ == other.elements_;
+}
+
+bool Matrix::operator!=(const Matrix& other) const {
+    return !(*this == other);
+}
+
+void swap(Matrix& a, Matrix& b) noexcept {
+    a.swap(b);
+}
+
+std::ostream& operator<<(std::ostream& os, const Matrix& m) {
+    os << "[";
+    for (Index i = 0; i < m.rows(); ++i) {
+        if (i > 0) os << ",\n ";
+        os << "[";
+        for (Index j = 0; j < m.cols(); ++j) {
+            if (j > 0) os << ", ";
+            os << m(i, j);
+        }
+        os << "]";
+    }
+    os << "]";
+    return os;
 }
 
 } // namespace pla

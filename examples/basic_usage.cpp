@@ -21,7 +21,7 @@ int main() {
     Vector v4 = {1.0, 2.0, 3.0, 4.0};  // Initializer list
     
     std::cout << "  v4 = ";
-    for (Index i = 0; i < v4.size(); i++) {
+    for (Index i = 0; i < v4.dimension(); i++) {
         std::cout << v4[i] << " ";
     }
     std::cout << std::endl;
