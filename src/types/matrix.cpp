@@ -4,56 +4,82 @@
 #include <algorithm>
 #include <cmath>
 #include <ostream>
+#include <Eigen/Dense>
 
 namespace pla {
 
-// Реалізувати додавання матриць: A + B
+
 Matrix Matrix::operator+(const Matrix& other) const {
     if (rows() != other.rows() || cols() != other.cols()) {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
     }
-    return;
+
+    Matrix result(rows(), cols(), 0.0, order_);
+    for(Index i = 0; i < rows(); i++)
+        for(Index j = 0; j < cols(); j++)
+            result(i,j) = (*this)(i,j) + other(i,j);
+    return result;
 }
 
-// Реалізувати віднімання: A - B
 Matrix Matrix::operator-(const Matrix& other) const {
     if (rows() != other.rows() || cols() != other.cols()) {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
     }
-    return;
+
+    Matrix result(rows(), cols(), 0.0, order_);
+    for(Index i = 0; i < rows(); i++)
+        for(Index j = 0; j < cols(); j++)
+            result(i,j) = (*this)(i,j) - other(i,j);
+    return result;
 }
 
-// Реалізувати унарний мінус: -A
 Matrix Matrix::operator-() const {
-    return;
+    Matrix result(rows(), cols(), 0.0, order_);
+    for(Index i = 0; i < rows(); i++)
+        for(Index j = 0; j < cols(); j++)
+            result(i,j) = -(*this)(i,j);
+    return result;
 }
 
-// Реалізувати множення на скаляр: A * α
 Matrix Matrix::operator*(Scalar scalar) const {
-    return;
+    Matrix result(rows(), cols(), 0.0, order_);
+    for(Index i = 0; i < rows(); i++)
+        for(Index j = 0; j < cols(); j++)
+            result(i,j) = (*this)(i,j) * scalar;
+    return result;
 }
 
-// Реалізувати ділення на скаляр: A / α
 Matrix Matrix::operator/(Scalar scalar) const {
-    if (std::abs(scalar) < 1e-15) {
+    if (std::abs(scalar) < 1e-15)
         throw InvalidScalarException("Division by zero");
-    }
-    return;
+
+    Matrix result(rows(), cols(), 0.0, order_);
+    for(Index i = 0; i < rows(); i++)
+        for(Index j = 0; j < cols(); j++)
+            result(i,j) = (*this)(i,j) / scalar;
+    return result;
 }
 
-// Реалізувати множення матриці на вектор: A * v → вектор
 Vector Matrix::operator*(const Vector& vec) const {
-    if (cols() != vec.dimension()) {
+    if(cols() != vec.dimension())
         throw ShapeMismatchException(rows(), cols(), vec.dimension(), 1);
+
+    Vector result(rows());
+    for(Index i = 0; i < rows(); i++){
+        Scalar sum = 0.0;
+        for(Index j = 0; j < cols(); j++)
+            sum += (*this)(i,j) * vec[j];
+        result[i] = sum;
     }
-    return;
+    return result;
 }
 
-// Реалізувати множення матриць: A * B → матриця
+
 Matrix Matrix::operator*(const Matrix& other) const {
     if (cols() != other.rows()) {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
     }
+
     return;
 }
 

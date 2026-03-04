@@ -37,52 +37,66 @@ Vector Vector::operator/(Scalar scalar) const {
     return Vector();
 }
 
-// Реалізувати складений оператор +=, -=, *=, /=
 Vector& Vector::operator+=(const Vector& other) {
-    return;
+    if (dimension() != other.dimension())
+        throw SizeMismatchException(dimension(), other.dimension());
+    for (Index i = 0; i < dimension(); ++i)
+        coordinates_[i] += other[i];
+    return *this;
 }
 
 Vector& Vector::operator-=(const Vector& other) {
-    return;
+    if (dimension() != other.dimension())
+        throw SizeMismatchException(dimension(), other.dimension());
+    for (Index i = 0; i < dimension(); ++i)
+        coordinates_[i] -= other[i];
+    return *this;
 }
 
 Vector& Vector::operator*=(Scalar scalar) {
+    for (Index i = 0; i < dimension(); ++i)
+        coordinates_[i] *= scalar;
     return *this;
 }
 
 Vector& Vector::operator/=(Scalar scalar) {
-    if (std::abs(scalar) < 1e-15) {
+    if (std::abs(scalar) < 1e-15)
         throw InvalidScalarException("Division by zero");
-    }
+    for (Index i = 0; i < dimension(); ++i)
+        coordinates_[i] /= scalar;
     return *this;
 }
 
-// Реалізувати скалярний добуток: v1.dot(v2)
+
 Scalar Vector::dot(const Vector& other) const {
-    if (dimension() != other.dimension()) {
+    if (dimension() != other.dimension())
         throw SizeMismatchException(dimension(), other.dimension());
-    }
-    return ;
+    Scalar sum = 0.0;
+    for (Index i = 0; i < dimension(); ++i)
+        sum += coordinates_[i] * other[i];
+    return sum;
 }
 
-// Реалізувати норму вектора 
 Scalar Vector::norm() const {
-    return ;
+    return std::sqrt(dot(*this));
 }
 
-// Реалізувати квадрат норми
 Scalar Vector::norm_squared() const {
-    return ;
+    return dot(*this);
 }
 
-// Реалізувати нормалізацію in-place: v.normalize()
 void Vector::normalize() {
-    
+    Scalar n = norm();
+    if (n < 1e-15)
+        throw std::runtime_error("Cannot normalize zero vector");
+    (*this) /= n;
 }
 
-// Реалізувати нормалізовану копію: v_unit = v.normalized()
 Vector Vector::normalized() const {
-    return;
+    Scalar n = norm();
+    if (n < 1e-15)
+        throw std::runtime_error("Cannot normalize zero vector");
+    return (*this) * (1.0 / n);
 }
 
 // TODO 13: Перевірити чи вектор одиничний
@@ -91,9 +105,8 @@ bool Vector::is_unit(Scalar tolerance) const {
     return std::abs(n - 1.0) < tolerance;
 }
 
-// Реалізувати α * v (скаляр зліва)
 Vector operator*(Scalar scalar, const Vector& vec) {
-    return;
+    return vec * scalar;
 }
 
 Scalar& Vector::at(Index i) {
