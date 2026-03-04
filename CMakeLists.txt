@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(parallel_linear_algebra_lib LANGUAGES CXX)
 
+# set(CXX clang++)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -17,10 +19,27 @@ add_library(pla STATIC
     src/types/vector.cpp
 )
 
+set_source_files_properties(
+    src/types/matrix.cpp
+    PROPERTIES COMPILE_OPTIONS "-O0;-mavx2;-mfma;-fno-tree-vectorize"
+)
+
 target_include_directories(pla
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+target_compile_options(pla PRIVATE
+    -O0
+    -fno-tree-vectorize
+    -fno-slp-vectorize
+)
+
+set_source_files_properties(
+    src/types/matrix.cpp
+    PROPERTIES COMPILE_OPTIONS "-O0;-fno-tree-vectorize;-fno-slp-vectorize;-mavx2;-mfma"
+)
+
 
 # 3. Turn off optimization for the pla library
 target_compile_options(pla PRIVATE -O0 -fno-tree-vectorize -fno-slp-vectorize)
@@ -50,3 +69,16 @@ target_link_libraries(test_multiplication
 
 include(GoogleTest)
 gtest_discover_tests(test_multiplication)
+
+
+
+
+
+
+
+# Всі файли бібліотеки — без автооптимізацій
+target_compile_options(pla PRIVATE
+    -O0
+    -fno-tree-vectorize
+    -fno-slp-vectorize
+)

@@ -7,6 +7,10 @@
 #include <ostream>
 #include <Eigen/Dense>
 
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
+
 namespace pla {
 
 
@@ -63,7 +67,7 @@ Matrix Matrix::operator/(Scalar scalar) const {
 
 Vector Matrix::operator*(const Vector& vec) const {
     if(cols() != vec.dimension())
-        throw ShapeMismatchException(rows(), cols(), vec.dimension(), 1);
+        throw ShapeMismatchException(rows_, cols_, vec.dimension(), 1);
 
     Vector result(rows());
     for(Index i = 0; i < rows(); i++){
@@ -79,7 +83,7 @@ Vector Matrix::operator*(const Vector& vec) const {
 Matrix Matrix::operator*(const Matrix& B) const {
     const Matrix& A = *this;
     if (A.cols() != B.rows()) {
-        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
+        throw ShapeMismatchException(A.rows_, A.cols_, B.rows_, B.cols_);
     }
 
     Matrix C(A.rows_, B.cols_, 0.0, A.order_);
@@ -88,13 +92,13 @@ Matrix Matrix::operator*(const Matrix& B) const {
     const Scalar* b = B.elements_.data();
     Scalar* c = C.elements_.data();
 
-    Index M = A.rows(), N = B.cols();
-    Index K = A.cols(); // same as B.rows()
+    Index i_end = A.rows(), j_end = B.cols();
+    Index k_end = A.cols(); // same as B.rows()
 
-    for (Index i = 0; i < M; ++i) {
-        for (Index k = 0; k < K; ++k) {
+    for (Index i = 0; i < i_end; ++i) {
+        for (Index k = 0; k < k_end; ++k) {
             Scalar alpha = A(i, k);
-            for (Index j = 0; j < N; ++j) {
+            for (Index j = 0; j < j_end; ++j) {
                 C(i, j) += alpha * B(k, j);
             }
         }
