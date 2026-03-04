@@ -3,6 +3,7 @@
 #include "../../include/types/exceptions.h"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <ostream>
 #include <Eigen/Dense>
 
@@ -75,12 +76,31 @@ Vector Matrix::operator*(const Vector& vec) const {
 }
 
 
-Matrix Matrix::operator*(const Matrix& other) const {
-    if (cols() != other.rows()) {
-        throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
+Matrix Matrix::operator*(const Matrix& B) const {
+    const Matrix& A = *this;
+    if (A.cols() != B.rows()) {
+        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
     }
 
-    return;
+    Matrix C(A.rows_, B.cols_, 0.0, A.order_);
+
+    const Scalar* a = A.elements_.data();
+    const Scalar* b = B.elements_.data();
+    Scalar* c = C.elements_.data();
+
+    Index M = A.rows(), N = B.cols();
+    Index K = A.cols(); // same as B.rows()
+
+    for (Index i = 0; i < M; ++i) {
+        for (Index k = 0; k < K; ++k) {
+            Scalar alpha = A(i, k);
+            for (Index j = 0; j < N; ++j) {
+                C(i, j) += alpha * B(k, j);
+            }
+        }
+    }
+
+    return C;
 }
 
 // TODO 8-11: Реалізувати складені оператори +=, -=, *=, /=
