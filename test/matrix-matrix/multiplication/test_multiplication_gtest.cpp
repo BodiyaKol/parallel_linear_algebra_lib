@@ -9,6 +9,13 @@
 
 using namespace std::chrono;
 
+static inline std::chrono::high_resolution_clock::time_point get_current_time_fenced() {
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    auto res_time = std::chrono::high_resolution_clock::now();
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    return res_time;
+}
+
 static void fill_random_pla(pla::Matrix& M, std::mt19937& rng, std::uniform_real_distribution<double>& dist) {
     for (int i = 0; i < M.rows(); ++i)
         for (int j = 0; j < M.cols(); ++j)
@@ -69,20 +76,17 @@ TEST(MatrixMultiplication, PerformanceCompareEigen) {
         fill_random_pla(A, rng, dist);
         fill_random_pla(B, rng, dist);
         
-        // Синхронізуємо дані
         sync_to_eigen(A, Ae);
         sync_to_eigen(B, Be);
 
-        // Warm-up
         pla::Matrix Cw = A * B;
         Eigen::MatrixXd Cew = Ae * Be;
 
-        // Time PLA
         double total_pla = 0.0;
         for (int r = 0; r < repeats; ++r) {
-            auto t0 = high_resolution_clock::now();
+            auto t0 = get_current_time_fenced();
             pla::Matrix C = A * B;
-            auto t1 = high_resolution_clock::now();
+            auto t1 = get_current_time_fenced();
             total_pla += duration_cast<duration<double>>(t1 - t0).count();
         }
         double avg_pla = total_pla / repeats;

@@ -2,6 +2,9 @@
 
 #include <iosfwd>
 #include <vector>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
 
 #include "index.h"
 #include "layout.h"
@@ -16,15 +19,51 @@ public:
     Matrix() = default;
 
     Matrix(Index rows, Index cols, StorageOrder order = StorageOrder::RowMajor)
-        : rows_(rows), cols_(cols), order_(order), elements_(rows * cols) {}
+        : rows_(rows), cols_(cols), order_(order) {
+            Index n = rows * cols;
+            double * ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
+            elements_.reset(ptr);
+
+            std::memset(elements_.get(), 0, n * sizeof(double));
+        }
 
     Matrix(Index rows, Index cols, Scalar value, StorageOrder order = StorageOrder::RowMajor)
-        : rows_(rows), cols_(cols), order_(order), elements_(rows * cols, value) {}
+        : rows_(rows), cols_(cols), order_(order) {
+            Index n = rows * cols;
+            double * ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
+            elements_.reset(ptr);
+
+            std::fill(ptr, ptr + n, value);
+        }
 
     ~Matrix() = default;
-    Matrix(const Matrix& other) = default;
+    // Matrix(const Matrix& other) = default;
+
+    Matrix(const Matrix& other)
+        : rows_(other.rows_), cols_(other.cols_), order_(other.order_) {
+            Index n = rows_ * cols_;
+            double* ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
+            elements_.reset(ptr);
+            std::memcpy(ptr, other.elements_.get(), n * sizeof(double));
+        }
+
     Matrix(Matrix&& other) noexcept = default;
-    Matrix& operator=(const Matrix& other) = default;
+
+    Matrix& operator=(const Matrix& other) {
+        if(this == &other) return *this;
+
+        Index n = other.rows_ * other.cols_;
+        double* ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
+        std::memcpy(ptr, other.elements_.get(), n * sizeof(double));
+
+        rows_ = other.rows_;
+        cols_ = other.cols_;
+        order_ = other.order_;
+        elements_.reset(ptr);
+
+        return *this;
+    }
+
     Matrix& operator=(Matrix&& other) noexcept = default;
 
     [[nodiscard]] Index rows() const noexcept {
@@ -36,7 +75,7 @@ public:
     }
 
     [[nodiscard]] Index size() const noexcept {
-        return elements_.size();
+        return rows_ * cols_;
     }
 
     [[nodiscard]] StorageOrder order() const noexcept {
@@ -48,20 +87,19 @@ public:
     }
 
     [[nodiscard]] Scalar* data() noexcept {
-        return elements_.data();
+        return elements_.get();
     }
 
     [[nodiscard]] const Scalar* data() const noexcept {
-        return elements_.data();
+        return elements_.get();
     }
 
-    // Індексування (рядок, стовпець)
     [[nodiscard]] Scalar& operator()(Index r, Index c) noexcept {
-        return elements_[offset(r, c)];
+        return elements_.get()[offset(r, c)];
     }
 
     [[nodiscard]] const Scalar& operator()(Index r, Index c) const noexcept {
-        return elements_[offset(r, c)];
+        return elements_.get()[offset(r, c)];
     }
 
     [[nodiscard]] Scalar& at(Index r, Index c);
@@ -70,7 +108,7 @@ public:
     void clear() noexcept {
         rows_ = 0;
         cols_ = 0;
-        elements_.clear();
+        elements_.reset(nullptr);
     }
 
     void swap(Matrix& other) noexcept {
@@ -130,7 +168,8 @@ private:
     Index rows_ = 0;
     Index cols_ = 0;
     StorageOrder order_ = StorageOrder::RowMajor;
-    std::vector<Scalar> elements_;
+    // std::vector<Scalar> elements_;
+    std::unique_ptr<double[], decltype(&std::free)> elements_ {nullptr, &std::free};
 };
 
 Matrix operator*(Scalar scalar, const Matrix& mat);

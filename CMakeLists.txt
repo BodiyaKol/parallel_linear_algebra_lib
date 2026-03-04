@@ -21,7 +21,7 @@ add_library(pla STATIC
 
 set_source_files_properties(
     src/types/matrix.cpp
-    PROPERTIES COMPILE_OPTIONS "-O0;-mavx2;-mfma;-fno-tree-vectorize"
+    PROPERTIES COMPILE_OPTIONS "-O0;-mavx2;-mfma;-fno-tree-vectorize;-march=native"
 )
 
 target_include_directories(pla
@@ -30,6 +30,7 @@ target_include_directories(pla
 )
 
 target_compile_options(pla PRIVATE
+    -march=native
     -O0
     -fno-tree-vectorize
     -fno-slp-vectorize
