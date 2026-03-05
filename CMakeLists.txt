@@ -21,16 +21,16 @@ add_library(pla STATIC
 target_include_directories(pla PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_compile_options(pla PRIVATE
--march=native
--O0
--fno-tree-vectorize
--fno-slp-vectorize
+    -march=native
+    -O3
+    -fno-tree-vectorize
+    -fno-slp-vectorize
 )
 
 
 set_source_files_properties(
     src/types/matrix.cpp
-    PROPERTIES COMPILE_OPTIONS "-O0;-mavx2;-mfma;-fno-tree-vectorize;-fno-slp-vectorize;-march=native"
+    PROPERTIES COMPILE_OPTIONS "-O3;-mavx2;-mfma;-fno-tree-vectorize;-fno-slp-vectorize;-march=native"
 )
 # -fopenmp
 
@@ -63,6 +63,13 @@ endif()
 
 add_executable(test_multiplication
     test/matrix-matrix/multiplication/test_multiplication_gtest.cpp
+)
+
+target_compile_options(test_multiplication PRIVATE
+    -O3
+    -march=native
+    -mavx2
+    -mfma
 )
 
 # Turn on O3

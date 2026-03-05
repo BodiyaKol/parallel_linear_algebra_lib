@@ -20,31 +20,24 @@ public:
 
     Matrix(Index rows, Index cols, StorageOrder order = StorageOrder::RowMajor)
         : rows_(rows), cols_(cols), order_(order) {
-            Index n = rows * cols;
-            double * ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
-            elements_.reset(ptr);
-
-            std::memset(elements_.get(), 0, n * sizeof(double));
+            allocate();
+            std::memset(elements_.get(), 0, size() * sizeof(double));
         }
 
     Matrix(Index rows, Index cols, Scalar value, StorageOrder order = StorageOrder::RowMajor)
         : rows_(rows), cols_(cols), order_(order) {
-            Index n = rows * cols;
-            double * ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
-            elements_.reset(ptr);
-
-            std::fill(ptr, ptr + n, value);
+            allocate();
+            std::fill(elements_.get(), elements_.get() + size(), value);
         }
 
     ~Matrix() = default;
-    // Matrix(const Matrix& other) = default;
 
     Matrix(const Matrix& other)
         : rows_(other.rows_), cols_(other.cols_), order_(other.order_) {
-            Index n = rows_ * cols_;
-            double* ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
-            elements_.reset(ptr);
-            std::memcpy(ptr, other.elements_.get(), n * sizeof(double));
+            allocate();
+            std::memcpy(elements_.get(),
+                other.elements_.get(),
+                size() * sizeof(double));
         }
 
     Matrix(Matrix&& other) noexcept = default;
@@ -52,14 +45,8 @@ public:
     Matrix& operator=(const Matrix& other) {
         if(this == &other) return *this;
 
-        Index n = other.rows_ * other.cols_;
-        double* ptr = static_cast<double*>(std::aligned_alloc(32, n * sizeof(double)));
-        std::memcpy(ptr, other.elements_.get(), n * sizeof(double));
-
-        rows_ = other.rows_;
-        cols_ = other.cols_;
-        order_ = other.order_;
-        elements_.reset(ptr);
+        Matrix tmp{other};
+        this->swap(tmp);
 
         return *this;
     }
@@ -158,6 +145,21 @@ public:
     [[nodiscard]] bool operator!=(const Matrix& other) const;
 
 private:
+    struct AlignedDeleter {
+        void operator()(double* ptr) const noexcept {
+            if (ptr)
+                operator delete[](ptr, std::align_val_t(64));
+        }
+    };
+
+    void allocate() {
+        if (size() == 0)
+            return;
+
+        double* raw = new (std::align_val_t(64)) double[size()];
+        elements_.reset(raw);
+    }
+    
     [[nodiscard]] Index offset(Index r, Index c) const noexcept {
         if (order_ == StorageOrder::RowMajor) {
             return r * cols_ + c;
@@ -168,8 +170,8 @@ private:
     Index rows_ = 0;
     Index cols_ = 0;
     StorageOrder order_ = StorageOrder::RowMajor;
-    // std::vector<Scalar> elements_;
-    std::unique_ptr<double[], decltype(&std::free)> elements_ {nullptr, &std::free};
+
+    std::unique_ptr<double[], AlignedDeleter> elements_;
 };
 
 Matrix operator*(Scalar scalar, const Matrix& mat);

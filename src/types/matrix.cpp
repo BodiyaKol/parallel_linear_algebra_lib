@@ -87,20 +87,30 @@ Matrix Matrix::operator*(const Matrix& B) const {
 
     Matrix C(A.rows_, B.cols_, 0.0, A.order_);
 
-    const double* __restrict__ a = A.elements_.get();
-    const double* __restrict__ b = B.elements_.get();
-    double* __restrict__ c = C.elements_.get();
+    // const double* __restrict__ a = A.elements_.get();
+    // const double* __restrict__ b = B.elements_.get();
+    // double* __restrict__ c = C.elements_.get();
+
+    // hint to compiler that it's aligned to 64
+    const double* __restrict__ a = static_cast<const double*>(__builtin_assume_aligned(A.elements_.get(), 64));
+    const double* __restrict__ b = static_cast<const double*>(__builtin_assume_aligned(B.elements_.get(), 64));
+    double*       __restrict__ c = static_cast<double*>      (__builtin_assume_aligned(C.elements_.get(), 64));
 
     const Index M = A.rows();
     const Index N = B.cols();
     const Index K = A.cols(); // same as B.rows()
 
 #ifdef __AVX2__
-    // sizeof(L1 cache) == (32KB)
+    // sizeof(L1 cache) == (48KB)
     constexpr Index TILE_M = 16;
     constexpr Index TILE_K = 32;
-    constexpr Index TILE_N = 64;  // mod 4 (AVX2 = 4 doubles)
+    constexpr Index TILE_N = 64;
 
+    // 16 * 32 = 512
+    // 32 * 64 = 2048
+    // 16 * 64 = 1024
+    // 512 + 2048 + 1024 = 3584 elements
+    // 3584 * 8 = 28672 / 1024 = 28 KB are used per block < 48 KB
 
 #ifdef USE_OPENMP
     #pragma omp parallel for schedule(dynamic) collapse(2)
@@ -117,57 +127,115 @@ Matrix Matrix::operator*(const Matrix& B) const {
         const Index k_end = std::min(kk + TILE_K, K);
         const Index j_end = std::min(jj + TILE_N, N);
 
-        for (Index i = ii; i < i_end; ++i) {
-        for (Index k = kk; k < k_end; ++k) {
+        constexpr Index RB = 4; // lines we calculate parallely
 
-            const double alpha = a[i * K + k];
-            const __m256d valpha = _mm256_set1_pd(alpha);
+        // per cycle calculate multiple lines
+        Index i = ii;
+        for (; i + (RB - 1) < i_end; i += RB) {
 
-            const double* b_row = b + k * N;
-            double*       c_row = c + i * N;
+            for (Index k = kk; k < k_end; ++k) {
+                // mm256 - size of register; copies one element to 4 parts of register; pd - packed double
+                // 4 scalars from A — one per each RB rows
+                const __m256d va0 = _mm256_set1_pd(a[(i+0) * K + k]);
+                const __m256d va1 = _mm256_set1_pd(a[(i+1) * K + k]);
+                const __m256d va2 = _mm256_set1_pd(a[(i+2) * K + k]);
+                const __m256d va3 = _mm256_set1_pd(a[(i+3) * K + k]);
 
-            Index j = jj;
+                const double* __restrict__ b_row = b + k * N;
 
-            // 16 doubles per iteration - 4 doubles per register
-            for (; j + 15 < j_end; j += 16) {
-                __builtin_prefetch(b_row + j + 64, 0, 1);
-                __builtin_prefetch(c_row + j + 64, 1, 1);
+                double* __restrict__ c0_row = (i+0) * N + c;
+                double* __restrict__ c1_row = (i+1) * N + c;
+                double* __restrict__ c2_row = (i+2) * N + c;
+                double* __restrict__ c3_row = (i+3) * N + c;
 
-                //                        Packed Doubles
-                __m256d c0 = _mm256_load_pd(c_row + j);
-                __m256d c1 = _mm256_load_pd(c_row + j + 4);
-                __m256d c2 = _mm256_load_pd(c_row + j + 8);
-                __m256d c3 = _mm256_load_pd(c_row + j + 12);
+                Index j = jj;
 
-                __m256d b0 = _mm256_load_pd(b_row + j);
-                __m256d b1 = _mm256_load_pd(b_row + j + 4);
-                __m256d b2 = _mm256_load_pd(b_row + j + 8);
-                __m256d b3 = _mm256_load_pd(b_row + j + 12);
+                // Main cycle: 16 doubles = 4 vectors × 4 doubles
+                //  4(rows) × 4(vectors) = 16 FMA per iteration
+                for (; j + 15 < j_end; j += 16) {
+                    // double* addr - address to load to cache
+                    // rw: 0 - read, 1 - write
+                    // locality: 0-3. 1 optimal by trials and fails
+                    __builtin_prefetch(b_row  + j + 64, 0, 1);
+                    __builtin_prefetch(c0_row + j + 64, 1, 1);
+                    __builtin_prefetch(c1_row + j + 64, 1, 1);
 
-                c0 = _mm256_fmadd_pd(valpha, b0, c0);
-                c1 = _mm256_fmadd_pd(valpha, b1, c1);
-                c2 = _mm256_fmadd_pd(valpha, b2, c2);
-                c3 = _mm256_fmadd_pd(valpha, b3, c3);
+                    // Load 16 doubles from b_row
+                    const __m256d b0 = _mm256_load_pd(b_row + j);
+                    const __m256d b1 = _mm256_load_pd(b_row + j + 4);
+                    const __m256d b2 = _mm256_load_pd(b_row + j + 8);
+                    const __m256d b3 = _mm256_load_pd(b_row + j + 12);
 
-                _mm256_store_pd(c_row + j,      c0);
-                _mm256_store_pd(c_row + j + 4,  c1);
-                _mm256_store_pd(c_row + j + 8,  c2);
-                _mm256_store_pd(c_row + j + 12, c3);
+                    // 1st c_row, 4 doubles, FMA
+                    _mm256_store_pd(c0_row+j,    _mm256_fmadd_pd(va0, b0, _mm256_load_pd(c0_row+j)));
+                    _mm256_store_pd(c0_row+j+4,  _mm256_fmadd_pd(va0, b1, _mm256_load_pd(c0_row+j+4)));
+                    _mm256_store_pd(c0_row+j+8,  _mm256_fmadd_pd(va0, b2, _mm256_load_pd(c0_row+j+8)));
+                    _mm256_store_pd(c0_row+j+12, _mm256_fmadd_pd(va0, b3, _mm256_load_pd(c0_row+j+12)));
+
+                    // 2nd c_row, 4 doubles, FMA
+                    _mm256_store_pd(c1_row+j,    _mm256_fmadd_pd(va1, b0, _mm256_load_pd(c1_row+j)));
+                    _mm256_store_pd(c1_row+j+4,  _mm256_fmadd_pd(va1, b1, _mm256_load_pd(c1_row+j+4)));
+                    _mm256_store_pd(c1_row+j+8,  _mm256_fmadd_pd(va1, b2, _mm256_load_pd(c1_row+j+8)));
+                    _mm256_store_pd(c1_row+j+12, _mm256_fmadd_pd(va1, b3, _mm256_load_pd(c1_row+j+12)));
+
+                    // 3rd row
+                    _mm256_store_pd(c2_row+j,    _mm256_fmadd_pd(va2, b0, _mm256_load_pd(c2_row+j)));
+                    _mm256_store_pd(c2_row+j+4,  _mm256_fmadd_pd(va2, b1, _mm256_load_pd(c2_row+j+4)));
+                    _mm256_store_pd(c2_row+j+8,  _mm256_fmadd_pd(va2, b2, _mm256_load_pd(c2_row+j+8)));
+                    _mm256_store_pd(c2_row+j+12, _mm256_fmadd_pd(va2, b3, _mm256_load_pd(c2_row+j+12)));
+
+                    // 4th row
+                    _mm256_store_pd(c3_row+j,    _mm256_fmadd_pd(va3, b0, _mm256_load_pd(c3_row+j)));
+                    _mm256_store_pd(c3_row+j+4,  _mm256_fmadd_pd(va3, b1, _mm256_load_pd(c3_row+j+4)));
+                    _mm256_store_pd(c3_row+j+8,  _mm256_fmadd_pd(va3, b2, _mm256_load_pd(c3_row+j+8)));
+                    _mm256_store_pd(c3_row+j+12, _mm256_fmadd_pd(va3, b3, _mm256_load_pd(c3_row+j+12)));
+                }
+
+                // Remainder of > 4 doubles
+                for (; j + 3 < j_end; j += 4) {
+                    const __m256d vb = _mm256_load_pd(b_row + j);
+                    _mm256_store_pd(c0_row+j, _mm256_fmadd_pd(va0, vb, _mm256_load_pd(c0_row+j)));
+                    _mm256_store_pd(c1_row+j, _mm256_fmadd_pd(va1, vb, _mm256_load_pd(c1_row+j)));
+                    _mm256_store_pd(c2_row+j, _mm256_fmadd_pd(va2, vb, _mm256_load_pd(c2_row+j)));
+                    _mm256_store_pd(c3_row+j, _mm256_fmadd_pd(va3, vb, _mm256_load_pd(c3_row+j)));
+                }
+
+                // the smallest remainder
+                const double alpha0 = a[(i+0) * K + k];
+                const double alpha1 = a[(i+1) * K + k];
+                const double alpha2 = a[(i+2) * K + k];
+                const double alpha3 = a[(i+3) * K + k];
+                for (; j < j_end; ++j) {
+                    c0_row[j] += alpha0 * b_row[j];
+                    c1_row[j] += alpha1 * b_row[j];
+                    c2_row[j] += alpha2 * b_row[j];
+                    c3_row[j] += alpha3 * b_row[j];
+                }
             }
+        }
 
-            // 4-double remnant
-            for (; j + 3 < j_end; j += 4) {
-                __m256d vc = _mm256_load_pd(c_row + j);
-                __m256d vb = _mm256_load_pd(b_row + j);
-                vc = _mm256_fmadd_pd(valpha, vb, vc);
-                _mm256_store_pd(c_row + j, vc);
+        // ── Залишкові рядки (якщо TILE_M не кратне RB=4) ────────────────────
+        for (; i < i_end; ++i) {
+            for (Index k = kk; k < k_end; ++k) {
+                const __m256d valpha   = _mm256_set1_pd(a[i * K + k]);
+                const double* b_row    = b + k * N;
+                double*       c_row    = c + i * N;
+                Index j = jj;
+                for (; j + 15 < j_end; j += 16) {
+                    __builtin_prefetch(b_row + j + 64, 0, 1);
+                    __builtin_prefetch(c_row + j + 64, 1, 1);
+                    _mm256_store_pd(c_row+j,    _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j),    _mm256_load_pd(c_row+j)));
+                    _mm256_store_pd(c_row+j+4,  _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j+4),  _mm256_load_pd(c_row+j+4)));
+                    _mm256_store_pd(c_row+j+8,  _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j+8),  _mm256_load_pd(c_row+j+8)));
+                    _mm256_store_pd(c_row+j+12, _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j+12), _mm256_load_pd(c_row+j+12)));
+                }
+                for (; j + 3 < j_end; j += 4) {
+                    _mm256_store_pd(c_row+j, _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j), _mm256_load_pd(c_row+j)));
+                }
+                const double alpha = a[i * K + k];
+                for (; j < j_end; ++j) c_row[j] += alpha * b_row[j];
             }
-
-            // scalar remnant
-            for (; j < j_end; ++j) {
-                c_row[j] += alpha * b_row[j];
-            }
-        }}
+        }
     }}}
 #else
     for (Index i = 0; i < M; ++i) {
@@ -183,7 +251,7 @@ Matrix Matrix::operator*(const Matrix& B) const {
     return C;
 }
 
-// TODO 8-11: Реалізувати складені оператори +=, -=, *=, /=
+//TODO:
 Matrix& Matrix::operator+=(const Matrix& other) {
     if (rows() != other.rows() || cols() != other.cols()) {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
@@ -213,12 +281,10 @@ Matrix& Matrix::operator/=(Scalar scalar) {
     return *this;
 }
 
-// Реалізувати транспонування: A^T
 Matrix Matrix::transpose() const {
     return Matrix{};
 }
 
-// Транспонування in-place (тільки для квадратних)
 void Matrix::transpose_inplace() {
     if (!is_square()) {
         throw NonSquareMatrixException(rows(), cols());
@@ -226,7 +292,6 @@ void Matrix::transpose_inplace() {
 
 }
 
-// Отримати рядок як вектор
 Vector Matrix::row(Index r) const {
     if (r >= rows()) {
         throw IndexOutOfRangeException(r, rows());
@@ -234,7 +299,6 @@ Vector Matrix::row(Index r) const {
     return Vector{};
 }
 
-// Отримати стовпець як вектор
 Vector Matrix::col(Index c) const {
     if (c >= cols()) {
         throw IndexOutOfRangeException(c, cols());
@@ -243,13 +307,11 @@ Vector Matrix::col(Index c) const {
     return Vector{};
 }
 
-// Заповнити матрицю значенням
 void Matrix::fill(Scalar value) {
     if (value == 0.0) std::memset(elements_.get(), 0, rows_ * cols_ * sizeof(double));
     else              std::fill(  elements_.get(), elements_.get() + rows_ * cols_, value);
 }
 
-// Зробити матрицю одиничною (identity)
 void Matrix::set_identity() {
     if (!is_square()) {
         throw NonSquareMatrixException(rows(), cols());
@@ -257,7 +319,6 @@ void Matrix::set_identity() {
     
 }
 
-// Статичний метод: створити одиничну матрицю
 Matrix Matrix::identity(Index n, StorageOrder order) {
     Matrix result(n, n, 0.0, order);
     for (Index i = 0; i < n; i++) {
@@ -266,12 +327,10 @@ Matrix Matrix::identity(Index n, StorageOrder order) {
     return result;
 }
 
-// Обчислити норму
 Scalar Matrix::norm() const {
     return 0.0;
 }
 
-// Множення скаляра на матрицю зліва: α * A
 Matrix operator*(Scalar scalar, const Matrix& mat) {
     return mat * scalar;
 }

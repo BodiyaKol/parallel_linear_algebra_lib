@@ -63,7 +63,7 @@ TEST(MatrixMultiplication, PerformanceCompareEigen) {
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
     std::vector<int> sizes = {4, 8, 16, 32, 64, 96, 128, 256, 512, 1024};
-    const int repeats = 2;
+    const int repeats = 4;
 
     for (int n : sizes) {
         int M = n, K = n, N = n;
