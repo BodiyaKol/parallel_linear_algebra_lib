@@ -80,7 +80,25 @@ Matrix Matrix::operator*(const Matrix& other) const {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
     }
 
-    return;
+    Eigen::MatrixXd A(rows(), cols());
+    Eigen::MatrixXd B(other.rows(), other.cols());
+
+    for (Index i = 0; i < rows(); i++)
+        for (Index j = 0; j < cols(); j++)
+            A(i, j) = (*this)(i, j);
+
+    for (Index i = 0; i < other.rows(); i++)
+        for (Index j = 0; j < other.cols(); j++)
+            B(i, j) = other(i, j);
+
+    Eigen::MatrixXd C = A * B;
+
+    Matrix result(rows(), other.cols(), 0.0);
+    for (Index i = 0; i < rows(); i++)
+        for (Index j = 0; j < other.cols(); j++)
+            result(i, j) = C(i, j);
+
+    return result;
 }
 
 // TODO 8-11: Реалізувати складені оператори +=, -=, *=, /=
