@@ -82,15 +82,10 @@ Vector Matrix::operator*(const Vector& vec) const {
 
 Matrix Matrix::operator*(const Matrix& B) const {
     const Matrix& A = *this;
-    if (A.cols() != B.rows()) {
+    if (A.cols() != B.rows())
         throw ShapeMismatchException(A.rows_, A.cols_, B.rows_, B.cols_);
-    }
 
     Matrix C(A.rows_, B.cols_, 0.0, A.order_);
-
-    // const Scalar* a = A.elements_.data();
-    // const Scalar* b = B.elements_.data();
-    // Scalar* c = C.elements_.data();
 
     const double* __restrict__ a = A.elements_.get();
     const double* __restrict__ b = B.elements_.get();
@@ -106,9 +101,17 @@ Matrix Matrix::operator*(const Matrix& B) const {
     constexpr Index TILE_K = 32;
     constexpr Index TILE_N = 64;  // mod 4 (AVX2 = 4 doubles)
 
+
+#ifdef USE_OPENMP
+    #pragma omp parallel for schedule(dynamic) collapse(2)
+    for (Index ii = 0; ii < M; ii += TILE_M) {
+    for (Index jj = 0; jj < N; jj += TILE_N) {
+    for (Index kk = 0; kk < K; kk += TILE_K) {
+#else
     for (Index ii = 0; ii < M; ii += TILE_M) {
     for (Index kk = 0; kk < K; kk += TILE_K) {
     for (Index jj = 0; jj < N; jj += TILE_N) {
+#endif
 
         const Index i_end = std::min(ii + TILE_M, M);
         const Index k_end = std::min(kk + TILE_K, K);
@@ -186,7 +189,7 @@ Matrix& Matrix::operator+=(const Matrix& other) {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
     }
     for(Index i = 0; i < rows_ * cols_; ++i)
-        elements_[i] += other.elements_[i];
+        elements_.get()[i] += other.elements_.get()[i];
     return *this;
 }
 
@@ -195,7 +198,7 @@ Matrix& Matrix::operator-=(const Matrix& other) {
         throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
     }
     for(Index i = 0; i < rows_ * cols_; ++i)
-        elements_[i] -= other.elements_[i];
+        elements_.get()[i] -= other.elements_.get()[i];
     return *this;
 }
 
