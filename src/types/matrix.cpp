@@ -214,7 +214,6 @@ Matrix Matrix::operator*(const Matrix& B) const {
             }
         }
 
-        // ── Залишкові рядки (якщо TILE_M не кратне RB=4) ────────────────────
         for (; i < i_end; ++i) {
             for (Index k = kk; k < k_end; ++k) {
                 const __m256d valpha   = _mm256_set1_pd(a[i * K + k]);

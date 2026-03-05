@@ -23,14 +23,12 @@ target_include_directories(pla PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(pla PRIVATE
     -march=native
     -O3
-    -fno-tree-vectorize
-    -fno-slp-vectorize
 )
 
 
 set_source_files_properties(
     src/types/matrix.cpp
-    PROPERTIES COMPILE_OPTIONS "-O3;-mavx2;-mfma;-fno-tree-vectorize;-fno-slp-vectorize;-march=native"
+    PROPERTIES COMPILE_OPTIONS "-O3;-mavx2;-mfma;-march=native"
 )
 # -fopenmp
 
