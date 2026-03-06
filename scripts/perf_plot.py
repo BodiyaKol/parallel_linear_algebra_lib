@@ -21,8 +21,8 @@ fig, ax = plt.subplots(figsize=(10, 6))
 ax.plot(ns, pla_times,   marker="o", linewidth=2, markersize=6, label="PLA (власна реалізація)")
 ax.plot(ns, eigen_times, marker="s", linewidth=2, markersize=6, label="Eigen")
 
-ax.set_xscale("log", base=2)
-ax.set_yscale("log")
+# ax.set_xscale("log", base=1.05)
+# ax.set_yscale("log", )
 
 ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"n={int(x)}"))
 ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: f"{y:.2e}s"))
