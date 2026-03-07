@@ -1,8 +1,19 @@
-//
-// Created by user on 03.03.2026.
-//
+#pragma once
 
-#ifndef PARALLEL_LINEAR_ALGEBRA_LIB_LU_H
-#define PARALLEL_LINEAR_ALGEBRA_LIB_LU_H
+#include "../../types/matrix.h"
+#include <vector>
+#include <stdexcept>
+#include <cmath>
 
-#endif //PARALLEL_LINEAR_ALGEBRA_LIB_LU_H
+namespace pla {
+
+    struct LUResult {
+        Matrix L;
+        Matrix U;
+        std::vector<Index> perm;
+    };
+
+    LUResult lu_blocked(const Matrix& input, Index block_size = 32);
+    LUResult lu_naive(const Matrix& input);
+
+}

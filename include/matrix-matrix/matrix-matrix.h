@@ -1,8 +1,3 @@
-//
-// Created by user on 03.03.2026.
-//
+#pragma once
 
-#ifndef PARALLEL_LINEAR_ALGEBRA_LIB_MATRIX_MATRIX_H
-#define PARALLEL_LINEAR_ALGEBRA_LIB_MATRIX_MATRIX_H
-
-#endif //PARALLEL_LINEAR_ALGEBRA_LIB_MATRIX_MATRIX_H
+#include "lu-factorization/lu.h"
