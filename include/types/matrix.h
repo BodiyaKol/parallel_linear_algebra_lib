@@ -2,43 +2,54 @@
 
 #include <iosfwd>
 #include <vector>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 
 #include "index.h"
 #include "layout.h"
-#include "scalar.h"
 
 namespace pla {
 
+template<typename Scalar>
+concept Numeric = std::is_arithmetic_v<Scalar>;
+
+template<typename Scalar>
 class Vector;
 
+template<typename Scalar = double>
+    requires Numeric<Scalar>
 class Matrix {
 public:
+    using valueType = Scalar;
+    using size_type = Index;
+
     Matrix() = default;
 
     Matrix(Index rows, Index cols, StorageOrder order = StorageOrder::RowMajor)
-        : rows_(rows), cols_(cols), order_(order) {
-            allocate();
-            std::memset(elements_.get(), 0, size() * sizeof(double));
-        }
+        : rows_(rows), cols_(cols), order_(order)
+    {
+        allocate();
+        std::memset(elements_.get(), 0, size() * sizeof(Scalar));
+    }
 
     Matrix(Index rows, Index cols, Scalar value, StorageOrder order = StorageOrder::RowMajor)
-        : rows_(rows), cols_(cols), order_(order) {
-            allocate();
-            std::fill(elements_.get(), elements_.get() + size(), value);
-        }
+        : rows_(rows), cols_(cols), order_(order)
+    {
+        allocate();
+        std::fill(elements_.get(), elements_.get() + size(), value);
+    }
 
     ~Matrix() = default;
 
     Matrix(const Matrix& other)
-        : rows_(other.rows_), cols_(other.cols_), order_(other.order_) {
-            allocate();
-            std::memcpy(elements_.get(),
-                other.elements_.get(),
-                size() * sizeof(double));
-        }
+        : rows_(other.rows_), cols_(other.cols_), order_(other.order_)
+    {
+        allocate();
+        std::memcpy(elements_.get(),
+            other.elements_.get(),
+            size() * sizeof(Scalar));
+    }
 
     Matrix(Matrix&& other) noexcept = default;
 
@@ -53,33 +64,17 @@ public:
 
     Matrix& operator=(Matrix&& other) noexcept = default;
 
-    [[nodiscard]] Index rows() const noexcept {
-        return rows_;
-    }
+    [[nodiscard]] Index rows() const noexcept { return rows_; }
+    [[nodiscard]] Index cols() const noexcept { return cols_; }
+    [[nodiscard]] Index size() const noexcept { return rows_ * cols_; }
 
-    [[nodiscard]] Index cols() const noexcept {
-        return cols_;
-    }
+    [[nodiscard]] StorageOrder order() const noexcept { return order_; }
 
-    [[nodiscard]] Index size() const noexcept {
-        return rows_ * cols_;
-    }
+    [[nodiscard]] bool is_square()     const noexcept { return rows_ == cols_; }
 
-    [[nodiscard]] StorageOrder order() const noexcept {
-        return order_;
-    }
+    [[nodiscard]] Scalar* data()             noexcept { return elements_.get(); }
 
-    [[nodiscard]] bool is_square() const noexcept {
-        return rows_ == cols_;
-    }
-
-    [[nodiscard]] Scalar* data() noexcept {
-        return elements_.get();
-    }
-
-    [[nodiscard]] const Scalar* data() const noexcept {
-        return elements_.get();
-    }
+    [[nodiscard]] const Scalar* data() const noexcept { return elements_.get(); }
 
     [[nodiscard]] Scalar& operator()(Index r, Index c) noexcept {
         return elements_.get()[offset(r, c)];
@@ -105,7 +100,7 @@ public:
         elements_.swap(other.elements_);
     }
 
-    Matrix operator+(const Matrix& other) const;
+    Matrix<Scalar> operator+(const Matrix& other) const;
 
     Matrix operator-(const Matrix& other) const;
 
@@ -113,11 +108,11 @@ public:
 
     Matrix operator*(Scalar scalar) const;
 
-    Matrix operator/(Scalar scalar) const;
+    Matrix operator/(Scalar) const;
 
-    Vector operator*(const Vector& vec) const;
+    Vector<Scalar> operator*(const Vector<Scalar>& vec) const;
 
-    Matrix operator*(const Matrix& other) const;
+    Matrix operator*(const Matrix<Scalar>& B) const;
 
     Matrix& operator+=(const Matrix& other);
     Matrix& operator-=(const Matrix& other);
@@ -128,9 +123,9 @@ public:
 
     void transpose_inplace();
 
-    [[nodiscard]] Vector row(Index r) const;
+    [[nodiscard]] Vector<Scalar> row(Index r) const;
 
-    [[nodiscard]] Vector col(Index c) const;
+    [[nodiscard]] Vector<Scalar> col(Index c) const;
 
     void fill(Scalar value);
 
@@ -146,9 +141,9 @@ public:
 
 private:
     struct AlignedDeleter {
-        void operator()(double* ptr) const noexcept {
+        void operator()(Scalar* ptr) const noexcept {
             if (ptr)
-                operator delete[](ptr, std::align_val_t(64));
+                operator delete[](ptr, std::align_val_t{64});
         }
     };
 
@@ -156,7 +151,7 @@ private:
         if (size() == 0)
             return;
 
-        double* raw = new (std::align_val_t(64)) double[size()];
+        auto* raw = new (std::align_val_t{64}) Scalar[size()];
         elements_.reset(raw);
     }
     
@@ -171,13 +166,18 @@ private:
     Index cols_ = 0;
     StorageOrder order_ = StorageOrder::RowMajor;
 
-    std::unique_ptr<double[], AlignedDeleter> elements_;
+    std::unique_ptr<Scalar[], AlignedDeleter> elements_;
 };
 
-Matrix operator*(Scalar scalar, const Matrix& mat);
+template<typename Scalar>
+Matrix<Scalar> operator*(Scalar scalar, const Matrix<Scalar>& mat);
 
-void swap(Matrix& a, Matrix& b) noexcept;
+template<typename Scalar>
+void swap(Matrix<Scalar>& a, Matrix<Scalar>& b) noexcept;
 
-std::ostream& operator<<(std::ostream& os, const Matrix& m);
+template<typename Scalar>
+std::ostream& operator<<(std::ostream& os, const Matrix<Scalar>& m);
 
 } // namespace pla
+
+#include "matrix_impl.hpp"

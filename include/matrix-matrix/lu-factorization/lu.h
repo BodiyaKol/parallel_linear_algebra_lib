@@ -2,18 +2,20 @@
 
 #include "../../types/matrix.h"
 #include <vector>
-#include <stdexcept>
-#include <cmath>
 
 namespace pla {
 
-    struct LUResult {
-        Matrix L;
-        Matrix U;
-        std::vector<Index> perm;
-    };
+template<typename Scalar>
+struct LUResult {
+    Matrix<Scalar> L;
+    Matrix<Scalar> U;
+    std::vector<Index> perm;
+};
 
-    LUResult lu_blocked(const Matrix& input, Index block_size = 32);
-    LUResult lu_naive(const Matrix& input);
+template<typename Scalar>
+LUResult<Scalar> lu_blocked(const Matrix<Scalar>& input, Index block_size = 32);
+
+template<typename Scalar>
+LUResult<Scalar> lu_naive(const Matrix<Scalar>& input);
 
 }

@@ -10,7 +10,8 @@
 namespace {
 
 // Допоміжна функція для порівняння чисел з плаваючою комою
-bool approx_equal(pla::Scalar a, pla::Scalar b, pla::Scalar eps = 1e-9) {
+template<typename Scalar>
+bool approx_equal(Scalar a, Scalar b, Scalar eps = 1e-9) {
     return std::abs(a - b) < eps;
 }
 

@@ -5,10 +5,10 @@
 #include <vector>
 
 #include "index.h"
-#include "scalar.h"
 
 namespace pla {
 
+template<typename Scalar>
 class Vector {
 public:
     Vector() = default;
@@ -103,10 +103,13 @@ private:
 };
 
 // Множення скаляра на вектор зліва: α * v
-Vector operator*(Scalar scalar, const Vector& vec);
+template<typename Scalar>
+Vector<Scalar> operator*(Scalar scalar, const Vector<Scalar>& vec);
 
-void swap(Vector& a, Vector& b) noexcept;
+template<typename Scalar>
+void swap(Vector<Scalar>& a, Vector<Scalar>& b) noexcept;
 
-std::ostream& operator<<(std::ostream& os, const Vector& v);
+template<typename Scalar>
+std::ostream& operator<<(std::ostream& os, const Vector<Scalar>& v);
 
 } // namespace pla

@@ -26,7 +26,7 @@ static inline high_resolution_clock::time_point get_current_time_fenced() {
 }
 
 static void fill_random_pla(
-    pla::Matrix& M,
+    pla::Matrix<>& M,
     std::mt19937& rng,
     std::uniform_real_distribution<double>& dist)
 {
@@ -35,7 +35,7 @@ static void fill_random_pla(
             M(i, j) = dist(rng);
 }
 
-static void sync_to_eigen(const pla::Matrix& src, Eigen::MatrixXd& dst) {
+static void sync_to_eigen(const pla::Matrix<>& src, Eigen::MatrixXd& dst) {
     for (int i = 0; i < src.rows(); ++i)
         for (int j = 0; j < src.cols(); ++j)
             dst(i, j) = src(i, j);

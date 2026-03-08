@@ -34,9 +34,6 @@ endif()
 # Library
 add_library(pla STATIC
         src/api/main_api.cpp
-        src/types/matrix.cpp
-        src/types/vector.cpp
-        src/matrix-matrix/lu-factorization/lu.cpp
 )
 
 target_include_directories(pla PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
