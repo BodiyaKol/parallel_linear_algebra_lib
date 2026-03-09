@@ -59,7 +59,7 @@ double benchmark(F&& func, int repeats) {
 static std::vector<MatrixShape> generate_shapes() {
 
     constexpr std::array dims{
-        4, 8, 16, 32, 64, 128, 256, 512
+        4, 8, 16, 32, 64, 128, 256, 511
     };
 
     std::vector<MatrixShape> shapes;

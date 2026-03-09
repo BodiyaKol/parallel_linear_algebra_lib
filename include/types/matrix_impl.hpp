@@ -15,50 +15,131 @@ namespace pla {
 
 template<typename Scalar>
     requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::operator+(const Matrix& other) const {
-    if (rows() != other.rows() || cols() != other.cols())
-        throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
+Matrix<Scalar> Matrix<Scalar>::operator+(const Matrix& B) const {
+    const Matrix<Scalar>& A = *this;
+    if (A.rows() != B.rows() || A.cols() != B.cols())
+        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
 
-    Matrix result(rows(), cols(), Scalar{0}, order_);
-    for(Index i = 0; i < rows(); i++)
-        for(Index j = 0; j < cols(); j++)
-            result(i,j) = (*this)(i,j) + other(i,j);
+    Matrix<Scalar> result(A.rows_, A.cols_, Scalar{0}, A.order_);
+    const Index sz = A.size();
+    const Scalar* lhs = A.data();
+    const Scalar* rhs = B.data();
+    Scalar* dst = result.data();
+
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        for (; i + 3 < sz; i += 4) {
+            __m256d a = _mm256_load_pd(lhs + i);
+            __m256d b = _mm256_load_pd(rhs + i);
+            _mm256_store_pd(dst + i, _mm256_add_pd(a, b));
+        }
+        for (; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        for (; i + 7 < sz; i += 8) {
+            __m256 a = _mm256_load_ps(lhs + i);
+            __m256 b = _mm256_load_ps(rhs + i);
+            _mm256_store_ps(dst + i, _mm256_add_ps(a, b));
+        }
+        for (; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
+    } else {
+        for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
+    }
+#else
+    for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
+#endif
+
     return result;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::operator-(const Matrix& other) const {
-    if (rows() != other.rows() || cols() != other.cols()) {
-        throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
-    }
+Matrix<Scalar> Matrix<Scalar>::operator-(const Matrix& B) const {
+    Matrix<Scalar>& A = *this;
+    if (A.rows() != B.rows() || A.cols() != B.cols())
+        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
 
-    Matrix result(rows(), cols(), 0, order_);
-    for(Index i = 0; i < rows(); i++)
-        for(Index j = 0; j < cols(); j++)
-            result(i,j) = (*this)(i,j) - other(i,j);
+    Matrix result(A.rows_, A.cols_, Scalar{0}, A.order_);
+
+    const Index sz = A.size();
+    const Scalar* lhs = A.data();
+    const Scalar* rhs = B.data();
+    Scalar* dst = result.data();
+
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        for (; i + 3 < sz; i += 4) {
+            __m256d a = _mm256_load_pd(lhs + i);
+            __m256d b = _mm256_load_pd(rhs + i);
+            _mm256_store_pd(dst + i, _mm256_sub_pd(a, b));
+        }
+        for (; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        for (; i + 7 < sz; i += 8) {
+            __m256 a = _mm256_load_ps(lhs + i);
+            __m256 b = _mm256_load_ps(rhs + i);
+            _mm256_store_ps(dst + i, _mm256_sub_ps(a, b));
+        }
+        for (; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
+    } else {
+        for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
+    }
+#else
+    for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
+#endif
+
     return result;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
 Matrix<Scalar> Matrix<Scalar>::operator-() const {
-    Matrix result(rows(), cols(), 0.0, order_);
-    for(Index i = 0; i < rows(); i++)
-        for(Index j = 0; j < cols(); j++)
-            result(i,j) = -(*this)(i,j);
+    Matrix result(rows_, cols_, Scalar{0}, order_);
+    Scalar* dst = result.data();
+    const Scalar* src = data();
+    const Index sz = size();
+
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        __m256d vneg = _mm256_set1_pd(-1.0);
+        for (; i + 3 < sz; i += 4) {
+            __m256d v = _mm256_load_pd(src + i);
+            _mm256_store_pd(dst + i, _mm256_mul_pd(v, vneg));
+        }
+        for (; i < sz; ++i) dst[i] = -src[i];
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        __m256 vneg = _mm256_set1_ps(-1.0f);
+        for (; i + 7 < sz; i += 8) {
+            __m256 v = _mm256_load_ps(src + i);
+            _mm256_store_ps(dst + i, _mm256_mul_ps(v, vneg));
+        }
+        for (; i < sz; ++i) dst[i] = -src[i];
+    } else {
+        for (Index i = 0; i < sz; ++i) dst[i] = -src[i];
+    }
+#else
+    for (Index i = 0; i < sz; ++i) dst[i] = -src[i];
+#endif
+
     return result;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
 Matrix<Scalar> Matrix<Scalar>::operator*(Scalar scalar) const {
-    Matrix result(rows(), cols(), 0.0, order_);
-    for(Index i = 0; i < rows(); i++)
-        for(Index j = 0; j < cols(); j++)
-            result(i,j) = (*this)(i,j) * scalar;
+    Matrix result(rows(), cols(), Scalar{0}, order_);
+    result *= scalar;
     return result;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -67,11 +148,11 @@ Matrix<Scalar> Matrix<Scalar>::operator/(Scalar scalar) const {
         throw InvalidScalarException("Division by zero");
 
     Matrix result(rows(), cols(), 0.0, order_);
-    for(Index i = 0; i < rows(); i++)
-        for(Index j = 0; j < cols(); j++)
-            result(i,j) = (*this)(i,j) / scalar;
+    result /= scalar;
+
     return result;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -99,14 +180,10 @@ Matrix<Scalar> Matrix<Scalar>::operator*(const Matrix& B) const {
 
     Matrix<Scalar> C{A.rows_, B.cols_, Scalar{0}, A.order_};
 
-    // const double* __restrict__ a = A.elements_.get();
-    // const double* __restrict__ b = B.elements_.get();
-    // double* __restrict__ c = C.elements_.get();
-
     // hint to compiler that it's aligned to 64
-    const auto* __restrict__ a = static_cast<const Scalar*>(__builtin_assume_aligned(A.elements_.get(), 64));
-    const auto* __restrict__ b = static_cast<const Scalar*>(__builtin_assume_aligned(B.elements_.get(), 64));
-    auto*       __restrict__ c = static_cast<      Scalar*>(__builtin_assume_aligned(C.elements_.get(), 64));
+    const auto* __restrict__ a = static_cast<const Scalar*>(__builtin_assume_aligned(A.data(), 64));
+    const auto* __restrict__ b = static_cast<const Scalar*>(__builtin_assume_aligned(B.data(), 64));
+    auto*       __restrict__ c = static_cast<      Scalar*>(__builtin_assume_aligned(C.data(), 64));
 
     const Index M = A.rows();
     const Index N = B.cols();
@@ -156,10 +233,10 @@ Matrix<Scalar> Matrix<Scalar>::operator*(const Matrix& B) const {
 
                     const double* __restrict__ b_row = b + k * N;
 
-                    double* __restrict__ c0_row = (i+0) * N + c;
-                    double* __restrict__ c1_row = (i+1) * N + c;
-                    double* __restrict__ c2_row = (i+2) * N + c;
-                    double* __restrict__ c3_row = (i+3) * N + c;
+                    double* __restrict__ c0_row = c + (i+0) * N;
+                    double* __restrict__ c1_row = c + (i+1) * N;
+                    double* __restrict__ c2_row = c + (i+2) * N;
+                    double* __restrict__ c3_row = c + (i+3) * N;
 
                     Index j = jj;
 
@@ -174,43 +251,43 @@ Matrix<Scalar> Matrix<Scalar>::operator*(const Matrix& B) const {
                         __builtin_prefetch(c1_row + j + 64, 1, 1);
 
                         // Load 16 doubles from b_row
-                        const __m256d b0 = _mm256_load_pd(b_row + j);
-                        const __m256d b1 = _mm256_load_pd(b_row + j + 4);
-                        const __m256d b2 = _mm256_load_pd(b_row + j + 8);
-                        const __m256d b3 = _mm256_load_pd(b_row + j + 12);
+                        const __m256d b0 = _mm256_loadu_pd(b_row + j);
+                        const __m256d b1 = _mm256_loadu_pd(b_row + j + 4);
+                        const __m256d b2 = _mm256_loadu_pd(b_row + j + 8);
+                        const __m256d b3 = _mm256_loadu_pd(b_row + j + 12);
 
                         // 1st c_row, 4 doubles, FMA
-                        _mm256_store_pd(c0_row+j,    _mm256_fmadd_pd(va0, b0, _mm256_load_pd(c0_row+j)));
-                        _mm256_store_pd(c0_row+j+4,  _mm256_fmadd_pd(va0, b1, _mm256_load_pd(c0_row+j+4)));
-                        _mm256_store_pd(c0_row+j+8,  _mm256_fmadd_pd(va0, b2, _mm256_load_pd(c0_row+j+8)));
-                        _mm256_store_pd(c0_row+j+12, _mm256_fmadd_pd(va0, b3, _mm256_load_pd(c0_row+j+12)));
+                        _mm256_storeu_pd(c0_row+j,    _mm256_fmadd_pd(va0, b0, _mm256_loadu_pd(c0_row+j)));
+                        _mm256_storeu_pd(c0_row+j+4,  _mm256_fmadd_pd(va0, b1, _mm256_loadu_pd(c0_row+j+4)));
+                        _mm256_storeu_pd(c0_row+j+8,  _mm256_fmadd_pd(va0, b2, _mm256_loadu_pd(c0_row+j+8)));
+                        _mm256_storeu_pd(c0_row+j+12, _mm256_fmadd_pd(va0, b3, _mm256_loadu_pd(c0_row+j+12)));
 
                         // 2nd c_row, 4 doubles, FMA
-                        _mm256_store_pd(c1_row+j,    _mm256_fmadd_pd(va1, b0, _mm256_load_pd(c1_row+j)));
-                        _mm256_store_pd(c1_row+j+4,  _mm256_fmadd_pd(va1, b1, _mm256_load_pd(c1_row+j+4)));
-                        _mm256_store_pd(c1_row+j+8,  _mm256_fmadd_pd(va1, b2, _mm256_load_pd(c1_row+j+8)));
-                        _mm256_store_pd(c1_row+j+12, _mm256_fmadd_pd(va1, b3, _mm256_load_pd(c1_row+j+12)));
+                        _mm256_storeu_pd(c1_row+j,    _mm256_fmadd_pd(va1, b0, _mm256_loadu_pd(c1_row+j)));
+                        _mm256_storeu_pd(c1_row+j+4,  _mm256_fmadd_pd(va1, b1, _mm256_loadu_pd(c1_row+j+4)));
+                        _mm256_storeu_pd(c1_row+j+8,  _mm256_fmadd_pd(va1, b2, _mm256_loadu_pd(c1_row+j+8)));
+                        _mm256_storeu_pd(c1_row+j+12, _mm256_fmadd_pd(va1, b3, _mm256_loadu_pd(c1_row+j+12)));
 
                         // 3rd row
-                        _mm256_store_pd(c2_row+j,    _mm256_fmadd_pd(va2, b0, _mm256_load_pd(c2_row+j)));
-                        _mm256_store_pd(c2_row+j+4,  _mm256_fmadd_pd(va2, b1, _mm256_load_pd(c2_row+j+4)));
-                        _mm256_store_pd(c2_row+j+8,  _mm256_fmadd_pd(va2, b2, _mm256_load_pd(c2_row+j+8)));
-                        _mm256_store_pd(c2_row+j+12, _mm256_fmadd_pd(va2, b3, _mm256_load_pd(c2_row+j+12)));
+                        _mm256_storeu_pd(c2_row+j,    _mm256_fmadd_pd(va2, b0, _mm256_loadu_pd(c2_row+j)));
+                        _mm256_storeu_pd(c2_row+j+4,  _mm256_fmadd_pd(va2, b1, _mm256_loadu_pd(c2_row+j+4)));
+                        _mm256_storeu_pd(c2_row+j+8,  _mm256_fmadd_pd(va2, b2, _mm256_loadu_pd(c2_row+j+8)));
+                        _mm256_storeu_pd(c2_row+j+12, _mm256_fmadd_pd(va2, b3, _mm256_loadu_pd(c2_row+j+12)));
 
                         // 4th row
-                        _mm256_store_pd(c3_row+j,    _mm256_fmadd_pd(va3, b0, _mm256_load_pd(c3_row+j)));
-                        _mm256_store_pd(c3_row+j+4,  _mm256_fmadd_pd(va3, b1, _mm256_load_pd(c3_row+j+4)));
-                        _mm256_store_pd(c3_row+j+8,  _mm256_fmadd_pd(va3, b2, _mm256_load_pd(c3_row+j+8)));
-                        _mm256_store_pd(c3_row+j+12, _mm256_fmadd_pd(va3, b3, _mm256_load_pd(c3_row+j+12)));
+                        _mm256_storeu_pd(c3_row+j,    _mm256_fmadd_pd(va3, b0, _mm256_loadu_pd(c3_row+j)));
+                        _mm256_storeu_pd(c3_row+j+4,  _mm256_fmadd_pd(va3, b1, _mm256_loadu_pd(c3_row+j+4)));
+                        _mm256_storeu_pd(c3_row+j+8,  _mm256_fmadd_pd(va3, b2, _mm256_loadu_pd(c3_row+j+8)));
+                        _mm256_storeu_pd(c3_row+j+12, _mm256_fmadd_pd(va3, b3, _mm256_loadu_pd(c3_row+j+12)));
                     }
 
                     // Remainder of > 4 doubles
                     for (; j + 3 < j_end; j += 4) {
-                        const __m256d vb = _mm256_load_pd(b_row + j);
-                        _mm256_store_pd(c0_row+j, _mm256_fmadd_pd(va0, vb, _mm256_load_pd(c0_row+j)));
-                        _mm256_store_pd(c1_row+j, _mm256_fmadd_pd(va1, vb, _mm256_load_pd(c1_row+j)));
-                        _mm256_store_pd(c2_row+j, _mm256_fmadd_pd(va2, vb, _mm256_load_pd(c2_row+j)));
-                        _mm256_store_pd(c3_row+j, _mm256_fmadd_pd(va3, vb, _mm256_load_pd(c3_row+j)));
+                        const __m256d vb = _mm256_loadu_pd(b_row + j);
+                        _mm256_storeu_pd(c0_row+j, _mm256_fmadd_pd(va0, vb, _mm256_loadu_pd(c0_row+j)));
+                        _mm256_storeu_pd(c1_row+j, _mm256_fmadd_pd(va1, vb, _mm256_loadu_pd(c1_row+j)));
+                        _mm256_storeu_pd(c2_row+j, _mm256_fmadd_pd(va2, vb, _mm256_loadu_pd(c2_row+j)));
+                        _mm256_storeu_pd(c3_row+j, _mm256_fmadd_pd(va3, vb, _mm256_loadu_pd(c3_row+j)));
                     }
 
                     // the smallest remainder
@@ -236,13 +313,13 @@ Matrix<Scalar> Matrix<Scalar>::operator*(const Matrix& B) const {
                     for (; j + 15 < j_end; j += 16) {
                         __builtin_prefetch(b_row + j + 64, 0, 1);
                         __builtin_prefetch(c_row + j + 64, 1, 1);
-                        _mm256_store_pd(c_row+j,    _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j),    _mm256_load_pd(c_row+j)));
-                        _mm256_store_pd(c_row+j+4,  _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j+4),  _mm256_load_pd(c_row+j+4)));
-                        _mm256_store_pd(c_row+j+8,  _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j+8),  _mm256_load_pd(c_row+j+8)));
-                        _mm256_store_pd(c_row+j+12, _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j+12), _mm256_load_pd(c_row+j+12)));
+                        _mm256_storeu_pd(c_row+j,    _mm256_fmadd_pd(valpha, _mm256_loadu_pd(b_row+j),    _mm256_loadu_pd(c_row+j)));
+                        _mm256_storeu_pd(c_row+j+4,  _mm256_fmadd_pd(valpha, _mm256_loadu_pd(b_row+j+4),  _mm256_loadu_pd(c_row+j+4)));
+                        _mm256_storeu_pd(c_row+j+8,  _mm256_fmadd_pd(valpha, _mm256_loadu_pd(b_row+j+8),  _mm256_loadu_pd(c_row+j+8)));
+                        _mm256_storeu_pd(c_row+j+12, _mm256_fmadd_pd(valpha, _mm256_loadu_pd(b_row+j+12), _mm256_loadu_pd(c_row+j+12)));
                     }
                     for (; j + 3 < j_end; j += 4) {
-                        _mm256_store_pd(c_row+j, _mm256_fmadd_pd(valpha, _mm256_load_pd(b_row+j), _mm256_load_pd(c_row+j)));
+                        _mm256_storeu_pd(c_row+j, _mm256_fmadd_pd(valpha, _mm256_loadu_pd(b_row+j), _mm256_loadu_pd(c_row+j)));
                     }
                     const double alpha = a[i * K + k];
                     for (; j < j_end; ++j) c_row[j] += alpha * b_row[j];
@@ -272,35 +349,121 @@ Matrix<Scalar> Matrix<Scalar>::operator*(const Matrix& B) const {
     return C;
 }
 
-//TODO:
 
 template<typename Scalar>
     requires Numeric<Scalar>
-Matrix<Scalar>& Matrix<Scalar>::operator+=(const Matrix& other) {
-    if (rows() != other.rows() || cols() != other.cols()) {
-        throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
+Matrix<Scalar>& Matrix<Scalar>::operator+=(const Matrix& B) {
+    Matrix<Scalar>& A = *this;
+    if (A.rows() != B.rows() || A.cols() != B.cols())
+        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
+
+    Scalar* dst = A.data();
+    const Scalar* src = B.data();
+    const Index sz = A.size();
+
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        for (; i + 3 < sz; i += 4) {
+            __m256d a = _mm256_load_pd(dst + i);
+            __m256d b = _mm256_load_pd(src + i);
+            _mm256_store_pd(dst + i, _mm256_add_pd(a, b));
+        }
+        for (; i < sz; ++i) dst[i] += src[i];
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        for (; i + 7 < sz; i += 8) {
+            __m256 a = _mm256_load_ps(dst + i);
+            __m256 b = _mm256_load_ps(src + i);
+            _mm256_store_ps(dst + i, _mm256_add_ps(a, b));
+        }
+        for (; i < sz; ++i) dst[i] += src[i];
+    } else {
+        for (Index i = 0; i < sz; ++i) dst[i] += src[i];
     }
-    for(Index i = 0; i < rows_ * cols_; ++i)
-        elements_.get()[i] += other.elements_.get()[i];
+#else
+    for (Index i = 0; i < sz; ++i) dst[i] += src[i];
+#endif
+
     return *this;
 }
 
+
 template<typename Scalar>
     requires Numeric<Scalar>
-Matrix<Scalar>& Matrix<Scalar>::operator-=(const Matrix& other) {
-    if (rows() != other.rows() || cols() != other.cols()) {
-        throw ShapeMismatchException(rows(), cols(), other.rows(), other.cols());
+Matrix<Scalar>& Matrix<Scalar>::operator-=(const Matrix& B) {
+    Matrix<Scalar>& A = *this;
+    if (A.rows() != B.rows() || A.cols() != B.cols()) {
+        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
     }
-    for(Index i = 0; i < rows_ * cols_; ++i)
-        elements_.get()[i] -= other.elements_.get()[i];
+    Scalar* dst = A.data();
+    const Scalar* src = B.data();
+    Index size = A.size();
+
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        for (; i + 3 < size; i += 4) {
+            __m256d a = _mm256_load_pd(dst + i);
+            __m256d b = _mm256_load_pd(src + i);
+            _mm256_store_pd(dst + i, _mm256_sub_pd(a, b));
+        }
+        for (; i < size; ++i) dst[i] -= src[i];
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        for (; i + 7 < size; i += 8) {
+            __m256 a = _mm256_load_ps(dst + i);
+            __m256 b = _mm256_load_ps(src + i);
+            _mm256_store_ps(dst + i, _mm256_sub_ps(a, b));
+        }
+        for (; i < size; ++i) dst[i] -= src[i];
+    } else {
+        for(Index i = 0; i < size; ++i) dst[i] -= src[i];
+    }
+#else
+    for (Index i = 0; i < size; ++i) dst[i] -= src[i];
+#endif
+
     return *this;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
 Matrix<Scalar>& Matrix<Scalar>::operator*=(Scalar scalar) {
+    Scalar* ptr = this->data();
+    const Index size = this->size();
+
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        __m256d vscalar = _mm256_set1_pd(scalar);
+        for (; i + 3 < size; i += 4) {
+            __m256d v = _mm256_load_pd(ptr + i);
+            v = _mm256_mul_pd(v, vscalar);
+            _mm256_store_pd(ptr + i, v);
+        }
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        __m256 vscalar = _mm256_set1_ps(scalar);
+        for (; i + 7 < size; i += 8) {
+            __m256 v = _mm256_load_ps(ptr + i);
+            v = _mm256_mul_ps(v, vscalar);
+            _mm256_store_ps(ptr + i, v);
+        }
+        for (; i < size; ++i) ptr[i] *= scalar;
+    } else {
+        for (Index i = 0; i < size; ++i) ptr[i] *= scalar;
+    }
+
+
+#else
+    for (Index i = 0; i < size; i++) ptr[i] *= scalar;
+#endif
+
     return *this;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -308,14 +471,46 @@ Matrix<Scalar>& Matrix<Scalar>::operator/=(Scalar scalar) {
     if (std::abs(scalar) < 1e-15) {
         throw InvalidScalarException("Division by zero");
     }
+
+    Scalar* ptr = this->data();
+    const Index sz = this->size();
+    
+#ifdef __AVX2__
+    if constexpr (std::is_same_v<Scalar, double>) {
+        Index i = 0;
+        __m256d vscalar = _mm256_set1_pd(scalar);
+        for (; i + 3 < sz; i += 4) {
+            __m256d v = _mm256_load_pd(ptr + i);
+            v = _mm256_div_pd(v, vscalar);
+            _mm256_store_pd(ptr + i, v);
+        }
+        for (; i < sz; ++i) ptr[i] /= scalar;
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        Index i = 0;
+        __m256 vscalar = _mm256_set1_ps(scalar);
+        for (; i + 7 < sz; i += 8) {
+            __m256 v = _mm256_load_ps(ptr + i);
+            v = _mm256_div_ps(v, vscalar);
+            _mm256_store_ps(ptr + i, v);
+        }
+        for (; i < sz; ++i) ptr[i] /= scalar;
+    } else {
+        for (Index i = 0; i < sz; ++i) ptr[i] /= scalar;
+    }
+#else
+    for (Index i = 0; i < sz; ++i) ptr[i] /= scalar;
+#endif
+
     return *this;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
 Matrix<Scalar> Matrix<Scalar>::transpose() const {
     return Matrix{};
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -325,6 +520,7 @@ void Matrix<Scalar>::transpose_inplace() {
     }
 }
 
+
 template<typename Scalar>
     requires Numeric<Scalar>
 Vector<Scalar> Matrix<Scalar>::row(Index r) const {
@@ -333,6 +529,7 @@ Vector<Scalar> Matrix<Scalar>::row(Index r) const {
     }
     return Vector<Scalar>{};
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -347,9 +544,10 @@ Vector<Scalar> Matrix<Scalar>::col(Index c) const {
 template<typename Scalar>
     requires Numeric<Scalar>
 void Matrix<Scalar>::fill(Scalar value) {
-    if (value == 0.0) std::memset(elements_.get(), 0, rows_ * cols_ * sizeof(double));
-    else              std::fill(  elements_.get(), elements_.get() + rows_ * cols_, value);
+    if (value == Scalar{0}) std::memset(data(), 0, size() * sizeof(Scalar));
+    else              std::fill(  data(), data() + size(), value);
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -359,6 +557,7 @@ void Matrix<Scalar>::set_identity() {
     }
     
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -370,16 +569,19 @@ Matrix<Scalar> Matrix<Scalar>::identity(Index n, StorageOrder order) {
     return result;
 }
 
+
 template<typename Scalar>
     requires Numeric<Scalar>
 Scalar Matrix<Scalar>::norm() const {
     return 0.0;
 }
 
+
 template<typename Scalar>
 Matrix<Scalar> operator*(Scalar scalar, const Matrix<Scalar>& mat) {
     return mat * scalar;
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -390,6 +592,7 @@ Scalar& Matrix<Scalar>::at(Index r, Index c) {
     return (*this)(r, c);
 }
 
+
 template<typename Scalar>
     requires Numeric<Scalar>
 const Scalar& Matrix<Scalar>::at(Index r, Index c) const {
@@ -399,12 +602,14 @@ const Scalar& Matrix<Scalar>::at(Index r, Index c) const {
     return (*this)(r, c);
 }
 
+
 template<typename Scalar>
     requires Numeric<Scalar>
 bool Matrix<Scalar>::operator==(const Matrix<Scalar>& other) const {
     if (rows_ != other.rows_ || cols_ != other.cols_ || order_ != other.order_) return false;
-    return std::equal(elements_.get(), elements_.get() + rows_ * cols_, other.elements_.get());
+    return std::equal(data(), data() + rows_ * cols_, other.data());
 }
+
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -412,10 +617,12 @@ bool Matrix<Scalar>::operator!=(const Matrix<Scalar>& other) const {
     return !(*this == other);
 }
 
+
 template<typename Scalar>
 void swap(Matrix<Scalar>& a, Matrix<Scalar>& b) noexcept {
     a.swap(b);
 }
+
 
 template<typename Scalar>
 std::ostream& operator<<(std::ostream& os, const Matrix<Scalar>& m) {
