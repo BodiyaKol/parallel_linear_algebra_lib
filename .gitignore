@@ -45,3 +45,7 @@ main.cpp
 data/
 .cache/
 *.png
+.idea/
+.vscode/
+.PVS-Studio/
+cmake-build-*/
