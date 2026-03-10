@@ -93,31 +93,21 @@ if(NOT GTest_FOUND)
     FetchContent_MakeAvailable(googletest)
 endif()
 
+# FINDS ALL TESTS RECURSIVLY
 
-# square matrices multiplication test
-add_executable(test_multiplication test/matrix-matrix/multiplication/test_multiplication_gtest.cpp)
+function(register_tests TEST_DIR)
+    file(GLOB_RECURSE TEST_SOURCES "${TEST_DIR}/test_*.cpp")
 
-target_link_libraries(test_multiplication PRIVATE pla GTest::gtest_main)
+    foreach(TEST_SOURCE ${TEST_SOURCES})
+        # test/opt/multiplication/test_matrix_opr.cpp → test_matrix_opr
+        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
-# rectangular matrices multiplication test
-add_executable(test_multiplic_rectangular test/matrix-matrix/multiplication/test_multiplic_rectangular.cpp)
+        add_executable(${TEST_NAME} ${TEST_SOURCE})
+        target_link_libraries(${TEST_NAME} PRIVATE pla GTest::gtest_main)
+        gtest_discover_tests(${TEST_NAME})
 
-target_link_libraries(test_multiplic_rectangular PRIVATE pla GTest::gtest_main)
+        message(STATUS "Registered test: ${TEST_NAME} <- ${TEST_SOURCE}")
+    endforeach()
+endfunction()
 
-# type tests
-add_executable(test_types test/types/test_types.cpp)
-target_link_libraries(test_types PRIVATE pla GTest::gtest_main)
-# target_compile_options(test_multiplication PRIVATE -O3 -march=native -mavx2 -mfma -ffast-math)
-
-# LU tests
-add_executable(test_lu test/matrix-matrix/lu-factorization/test_lu.cpp)
-target_link_libraries(test_lu PRIVATE pla GTest::gtest_main)
-
-# target_compile_options(test_multiplic_rectangular PRIVATE -O3 -march=native -mavx2 -mfma -ffast-math)
-
-include(GoogleTest)
-
-gtest_discover_tests(test_multiplication)
-gtest_discover_tests(test_multiplic_rectangular)
-gtest_discover_tests(test_lu)
-gtest_discover_tests(test_types)
+register_tests(${CMAKE_CURRENT_SOURCE_DIR}/test)

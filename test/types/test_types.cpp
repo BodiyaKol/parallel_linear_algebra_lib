@@ -5,7 +5,7 @@
 #include <cmath>
 #include <iostream>
 
-#include "../../include/pla.h"
+#include "pla.h"
 
 namespace {
 

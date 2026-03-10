@@ -35,11 +35,11 @@ public:
         return coordinates_.empty();
     }
 
-    [[nodiscard]] Scalar* coordinates() noexcept {
+    [[nodiscard]] Scalar* data() noexcept {
         return coordinates_.data();
     }
 
-    [[nodiscard]] const Scalar* coordinates() const noexcept {
+    [[nodiscard]] const Scalar* data() const noexcept {
         return coordinates_.data();
     }
 

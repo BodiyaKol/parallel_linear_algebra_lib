@@ -1,8 +1,6 @@
 #ifndef PARALLEL_LINEAR_ALGEBRA_LIB_MATRIX_ADD_H
 #define PARALLEL_LINEAR_ALGEBRA_LIB_MATRIX_ADD_H
 
-#include "pla/core/matrix.h"
-
 #ifdef __AVX2__
 #include <immintrin.h>
 #endif
@@ -53,7 +51,7 @@ Matrix<Scalar> Matrix<Scalar>::operator+(const Matrix& B) const {
 template<typename Scalar>
     requires Numeric<Scalar>
 Matrix<Scalar> Matrix<Scalar>::operator-(const Matrix& B) const {
-    Matrix<Scalar>& A = *this;
+    const Matrix<Scalar>& A = *this;
     if (A.rows() != B.rows() || A.cols() != B.cols())
         throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
 

@@ -8,6 +8,7 @@
 
 #include "pla/types/index.h"
 #include "pla/types/layout.h"
+#include "pla/core/vector.h"
 
 namespace pla {
 
@@ -164,16 +165,20 @@ private:
 };
 
 template<typename Scalar>
+    requires Numeric<Scalar>
 Matrix<Scalar> operator*(Scalar scalar, const Matrix<Scalar>& mat);
 
 template<typename Scalar>
+    requires Numeric<Scalar>
 void swap(Matrix<Scalar>& a, Matrix<Scalar>& b) noexcept;
 
 template<typename Scalar>
+    requires Numeric<Scalar>
 std::ostream& operator<<(std::ostream& os, const Matrix<Scalar>& m);
 
 } // namespace pla
 
-#include "pla/opt/matrix_add.hpp"
+#include "pla/core/matrix_impl.hpp"
 #include "pla/core/vector_impl.hpp"
+#include "pla/opt/matrix_add.hpp"
 #include "pla/opt/matrix_multiplication.hpp"

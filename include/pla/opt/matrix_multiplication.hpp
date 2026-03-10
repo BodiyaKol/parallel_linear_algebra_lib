@@ -17,7 +17,7 @@ namespace pla {
 template<typename Scalar>
     requires Numeric<Scalar>
 Matrix<Scalar> Matrix<Scalar>::operator*(Scalar scalar) const {
-    Matrix result(rows(), cols(), Scalar{0}, order_);
+    Matrix result(*this);
     result *= scalar;
     return result;
 }
@@ -29,7 +29,7 @@ Matrix<Scalar> Matrix<Scalar>::operator/(Scalar scalar) const {
     if (std::abs(scalar) < 1e-15)
         throw InvalidScalarException("Division by zero");
 
-    Matrix result(rows(), cols(), Scalar{0}, order_);
+    Matrix result(*this);
     result /= scalar;
 
     return result;
