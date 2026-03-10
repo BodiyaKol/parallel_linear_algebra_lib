@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 #include <string>
-#include "index.h"
+#include "pla/types/index.h"
 
 namespace pla {
 

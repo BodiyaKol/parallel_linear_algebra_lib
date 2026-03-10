@@ -4,11 +4,12 @@
 #include <iosfwd>
 #include <vector>
 
-#include "index.h"
+#include "pla/types/index.h"
 
 namespace pla {
 
 template<typename Scalar>
+    requires Numeric<Scalar>
 class Vector {
 public:
     Vector() = default;
@@ -54,9 +55,9 @@ public:
     [[nodiscard]] const Scalar& at(Index i) const;
 
     auto begin() noexcept { return coordinates_.begin(); }
-    auto end() noexcept { return coordinates_.end(); }
+    auto end()   noexcept { return coordinates_.end();   }
     auto begin() const noexcept { return coordinates_.begin(); }
-    auto end() const noexcept { return coordinates_.end(); }
+    auto end()   const noexcept { return coordinates_.end();   }
 
     void clear() noexcept { coordinates_.clear(); }
 
@@ -77,22 +78,16 @@ public:
     Vector& operator*=(Scalar scalar);
     Vector& operator/=(Scalar scalar);
 
-    // Скалярний добуток (dot product): v1.dot(v2)
     [[nodiscard]] Scalar dot(const Vector& other) const;
 
-    // Норма вектора
     [[nodiscard]] Scalar norm() const;
 
-    // Квадрат норми
     [[nodiscard]] Scalar norm_squared() const;
 
-    // Нормалізація in-place (змінює поточний вектор)
     void normalize();
 
-    // Повертає нормалізовану копію
     [[nodiscard]] Vector normalized() const;
 
-    // Перевірка чи вектор одиничний (norm ≈ 1)
     [[nodiscard]] bool is_unit(Scalar tolerance = 1e-9) const;
 
     [[nodiscard]] bool operator==(const Vector& other) const;
@@ -102,7 +97,6 @@ private:
     std::vector<Scalar> coordinates_;
 };
 
-// Множення скаляра на вектор зліва: α * v
 template<typename Scalar>
 Vector<Scalar> operator*(Scalar scalar, const Vector<Scalar>& vec);
 
@@ -113,3 +107,5 @@ template<typename Scalar>
 std::ostream& operator<<(std::ostream& os, const Vector<Scalar>& v);
 
 } // namespace pla
+
+#include "pla/core/vector_impl.hpp"

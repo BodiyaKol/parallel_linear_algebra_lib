@@ -1,6 +1,6 @@
 #pragma once
 
-#include "index.h"
+#include "pla/types/index.h"
 
 namespace pla {
 

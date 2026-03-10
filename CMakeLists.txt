@@ -32,13 +32,14 @@ endif()
 
 
 # Library
-add_library(pla STATIC
-        src/api/main_api.cpp
-)
+add_library(pla INTERFACE
+        include/pla/types/shape.h
+        include/pla/core/vector_impl.hpp
+        include/pla/decompos/lu_impl.hpp)
 
-target_include_directories(pla PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(pla PUBLIC cxx_std_23)
-target_link_libraries(pla PUBLIC Eigen3::Eigen)
+target_include_directories(pla INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(pla INTERFACE cxx_std_23)
+target_link_libraries(pla INTERFACE Eigen3::Eigen)
 
 # target_compile_options(pla PRIVATE
 #     -O3
@@ -50,7 +51,7 @@ target_link_libraries(pla PUBLIC Eigen3::Eigen)
 # Architecture specific optimizations
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
 
-    target_compile_options(pla PRIVATE
+    target_compile_options(pla INTERFACE
         -march=native
         -mtune=native
         -mavx2
@@ -60,7 +61,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
 
     # Apple Silicon / ARM CPUs
-    target_compile_options(pla PRIVATE
+    target_compile_options(pla INTERFACE
         -mcpu=native
     )
 

@@ -6,16 +6,10 @@
 #include <memory>
 #include <type_traits>
 
-#include "index.h"
-#include "layout.h"
+#include "pla/types/index.h"
+#include "pla/types/layout.h"
 
 namespace pla {
-
-template<typename Scalar>
-concept Numeric = std::is_arithmetic_v<Scalar>;
-
-template<typename Scalar>
-class Vector;
 
 template<typename Scalar = double>
     requires Numeric<Scalar>
@@ -180,4 +174,6 @@ std::ostream& operator<<(std::ostream& os, const Matrix<Scalar>& m);
 
 } // namespace pla
 
-#include "matrix_impl.hpp"
+#include "pla/opt/matrix_add.hpp"
+#include "pla/core/vector_impl.hpp"
+#include "pla/opt/matrix_multiplication.hpp"

@@ -1,16 +1,21 @@
-#include "main_api.h"
+#ifndef PARALLEL_LINEAR_ALGEBRA_LIB_LU_IMPL_H
+#define PARALLEL_LINEAR_ALGEBRA_LIB_LU_IMPL_H
 
 #include <vector>
 #include <cmath>
 #include <stdexcept>
 
+#include "pla/types/index.h"
+
 namespace pla {
 
-static Matrix extract_block(const Matrix& A, Index row_start, Index row_end,
+template<typename Scalar>
+    requires Numeric<Scalar>
+static Matrix<Scalar> extract_block(const Matrix<Scalar>& A, Index row_start, Index row_end,
                                             Index col_start, Index col_end) {
     Index rows = row_end - row_start;
     Index cols = col_end - col_start;
-    Matrix block(rows, cols, 0.0);
+    Matrix block{rows, cols, 0.0};
 
     for (Index i = 0; i < rows; i++)
         for (Index j = 0; j < cols; j++)
@@ -19,7 +24,9 @@ static Matrix extract_block(const Matrix& A, Index row_start, Index row_end,
     return block;
 }
 
-static void subtract_block(Matrix& A, const Matrix& block,
+template<typename Scalar>
+    requires Numeric<Scalar>
+static void subtract_block(Matrix<Scalar>& A, const Matrix<Scalar>& block,
                                               Index row_start, Index col_start) {
     for (Index i = 0; i < block.rows(); i++)
         for (Index j = 0; j < block.cols(); j++)
@@ -27,8 +34,9 @@ static void subtract_block(Matrix& A, const Matrix& block,
 }
 
 
-
-static void lu_diagonal_block(Matrix& A, Index block_row,
+template<typename Scalar>
+    requires Numeric<Scalar>
+static void lu_diagonal_block(Matrix<Scalar>& A, Index block_row,
                                Index block_col, Index block_size) {
 
     Index n = std::min(block_size, std::min(A.rows() - block_row, A.cols() - block_col));
@@ -54,7 +62,9 @@ static void lu_diagonal_block(Matrix& A, Index block_row,
 // L00 * x_k = Ai_k(columns)
 // => U(r,j) + sum_{i=block_row..r-1} L(r,i) * U(i,j) = A(r,j)
 // => U(r,j) = A(r,j) - sum_{i<r} L(r,i) * U(i,j)
-static void update_right(Matrix& A, Index block_row, Index block_col, Index block_size,
+template<typename Scalar>
+    requires Numeric<Scalar>
+static void update_right(Matrix<Scalar>& A, Index block_row, Index block_col, Index block_size,
                                          Index col_start, Index col_end) {
 
     for (Index k = 0; k < block_size; k++) {
@@ -72,7 +82,9 @@ static void update_right(Matrix& A, Index block_row, Index block_col, Index bloc
 // x_r * U00 = Ai0_r (rows)
 // => L(i,k) * U(k,k) + sum_{j=k+1..block_size-1} L(i,j) * U(j,k) = A(i,k)
 // => L(i,k) = (A(i,k) - sum_{j>k} L(i,j) * U(j,k)) / U(k,k)
-static void update_bottom(Matrix& A, Index block_row, Index block_col, Index block_size,
+template<typename Scalar>
+    requires Numeric<Scalar>
+static void update_bottom(Matrix<Scalar>& A, Index block_row, Index block_col, Index block_size,
                                                     Index row_start, Index row_end) {
     for (Index i = row_start; i < row_end; i++) {
         for (Index k = 0; k < block_size; k++) {
@@ -87,21 +99,25 @@ static void update_bottom(Matrix& A, Index block_row, Index block_col, Index blo
 }
 
 // A_sub -= L_bottom * U_right
-static void update_submatrix(Matrix& A, Index row_start, Index row_end,
+template<typename Scalar>
+    requires Numeric<Scalar>
+static void update_submatrix(Matrix<Scalar>& A, Index row_start, Index row_end,
                                      Index col_start, Index col_end,
                                                Index k_start,   Index k_end) {
 
-    Matrix L_bottom = extract_block(A, row_start, row_end, k_start, k_end);
-    Matrix U_right  = extract_block(A, k_start,   k_end,  col_start, col_end);
+    Matrix<Scalar> L_bottom = extract_block(A, row_start, row_end, k_start, k_end);
+    Matrix<Scalar> U_right  = extract_block(A, k_start,   k_end,  col_start, col_end);
 
-    Matrix product = L_bottom * U_right;
+    Matrix<Scalar> product = L_bottom * U_right;
 
     // A_sub -= L_bottom * U_right
     subtract_block(A, product, row_start, col_start);
 }
 
 
-LUResult lu_blocked(const Matrix& input, Index block_size) {
+template<typename Scalar>
+    requires Numeric<Scalar>
+LUResult<Scalar> lu_blocked(const Matrix<Scalar>& input, Index block_size) {
     if (!input.is_square())
         throw std::invalid_argument("LU: matrix must be square");
 
@@ -141,8 +157,8 @@ LUResult lu_blocked(const Matrix& input, Index block_size) {
         }
     }
 
-    Matrix L = Matrix::identity(n);
-    Matrix U(n, n, 0.0);
+    Matrix<Scalar> L = Matrix<Scalar>::identity(n);
+    Matrix<Scalar> U(n, n, 0.0);
 
     for (Index i = 0; i < n; i++) {
         for (Index j = 0; j < n; j++) {
@@ -158,3 +174,4 @@ LUResult lu_blocked(const Matrix& input, Index block_size) {
 
 }
 
+#endif //PARALLEL_LINEAR_ALGEBRA_LIB_LU_IMPL_H

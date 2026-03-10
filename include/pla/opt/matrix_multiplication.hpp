@@ -1,136 +1,18 @@
 #pragma once
 
-#include "vector.h"
-#include "exceptions.h"
-
 #include <algorithm>
 #include <cmath>
 #include <ostream>
+
+#include "pla/core/matrix.h"
+#include "../core/vector.h"
+#include "pla/exceptions.h"
 
 #ifdef __AVX2__
 #include <immintrin.h>
 #endif
 
 namespace pla {
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::operator+(const Matrix& B) const {
-    const Matrix<Scalar>& A = *this;
-    if (A.rows() != B.rows() || A.cols() != B.cols())
-        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
-
-    Matrix<Scalar> result(A.rows_, A.cols_, Scalar{0}, A.order_);
-    const Index sz = A.size();
-    const Scalar* lhs = A.data();
-    const Scalar* rhs = B.data();
-    Scalar* dst = result.data();
-
-#ifdef __AVX2__
-    if constexpr (std::is_same_v<Scalar, double>) {
-        Index i = 0;
-        for (; i + 3 < sz; i += 4) {
-            __m256d a = _mm256_load_pd(lhs + i);
-            __m256d b = _mm256_load_pd(rhs + i);
-            _mm256_store_pd(dst + i, _mm256_add_pd(a, b));
-        }
-        for (; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
-    } else if constexpr (std::is_same_v<Scalar, float>) {
-        Index i = 0;
-        for (; i + 7 < sz; i += 8) {
-            __m256 a = _mm256_load_ps(lhs + i);
-            __m256 b = _mm256_load_ps(rhs + i);
-            _mm256_store_ps(dst + i, _mm256_add_ps(a, b));
-        }
-        for (; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
-    } else {
-        for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
-    }
-#else
-    for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] + rhs[i];
-#endif
-
-    return result;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::operator-(const Matrix& B) const {
-    Matrix<Scalar>& A = *this;
-    if (A.rows() != B.rows() || A.cols() != B.cols())
-        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
-
-    Matrix result(A.rows_, A.cols_, Scalar{0}, A.order_);
-
-    const Index sz = A.size();
-    const Scalar* lhs = A.data();
-    const Scalar* rhs = B.data();
-    Scalar* dst = result.data();
-
-#ifdef __AVX2__
-    if constexpr (std::is_same_v<Scalar, double>) {
-        Index i = 0;
-        for (; i + 3 < sz; i += 4) {
-            __m256d a = _mm256_load_pd(lhs + i);
-            __m256d b = _mm256_load_pd(rhs + i);
-            _mm256_store_pd(dst + i, _mm256_sub_pd(a, b));
-        }
-        for (; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
-    } else if constexpr (std::is_same_v<Scalar, float>) {
-        Index i = 0;
-        for (; i + 7 < sz; i += 8) {
-            __m256 a = _mm256_load_ps(lhs + i);
-            __m256 b = _mm256_load_ps(rhs + i);
-            _mm256_store_ps(dst + i, _mm256_sub_ps(a, b));
-        }
-        for (; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
-    } else {
-        for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
-    }
-#else
-    for (Index i = 0; i < sz; ++i) dst[i] = lhs[i] - rhs[i];
-#endif
-
-    return result;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::operator-() const {
-    Matrix result(rows_, cols_, Scalar{0}, order_);
-    Scalar* dst = result.data();
-    const Scalar* src = data();
-    const Index sz = size();
-
-#ifdef __AVX2__
-    if constexpr (std::is_same_v<Scalar, double>) {
-        Index i = 0;
-        __m256d vneg = _mm256_set1_pd(-1.0);
-        for (; i + 3 < sz; i += 4) {
-            __m256d v = _mm256_load_pd(src + i);
-            _mm256_store_pd(dst + i, _mm256_mul_pd(v, vneg));
-        }
-        for (; i < sz; ++i) dst[i] = -src[i];
-    } else if constexpr (std::is_same_v<Scalar, float>) {
-        Index i = 0;
-        __m256 vneg = _mm256_set1_ps(-1.0f);
-        for (; i + 7 < sz; i += 8) {
-            __m256 v = _mm256_load_ps(src + i);
-            _mm256_store_ps(dst + i, _mm256_mul_ps(v, vneg));
-        }
-        for (; i < sz; ++i) dst[i] = -src[i];
-    } else {
-        for (Index i = 0; i < sz; ++i) dst[i] = -src[i];
-    }
-#else
-    for (Index i = 0; i < sz; ++i) dst[i] = -src[i];
-#endif
-
-    return result;
-}
-
 
 template<typename Scalar>
     requires Numeric<Scalar>
@@ -147,7 +29,7 @@ Matrix<Scalar> Matrix<Scalar>::operator/(Scalar scalar) const {
     if (std::abs(scalar) < 1e-15)
         throw InvalidScalarException("Division by zero");
 
-    Matrix result(rows(), cols(), 0.0, order_);
+    Matrix result(rows(), cols(), Scalar{0}, order_);
     result /= scalar;
 
     return result;
@@ -161,8 +43,8 @@ Vector<Scalar> Matrix<Scalar>::operator*(const Vector<Scalar>& vec) const {
         throw ShapeMismatchException(rows_, cols_, vec.dimension(), 1);
 
     Vector<Scalar> result(rows());
-    for(Index i = 0; i < rows(); i++){
-        Scalar sum = 0.0;
+    for(Index i = 0; i < rows(); i++) {
+        Scalar sum = Scalar{0};
         for(Index j = 0; j < cols(); j++)
             sum += (*this)(i,j) * vec[j];
         result[i] = sum;
@@ -352,84 +234,6 @@ Matrix<Scalar> Matrix<Scalar>::operator*(const Matrix& B) const {
 
 template<typename Scalar>
     requires Numeric<Scalar>
-Matrix<Scalar>& Matrix<Scalar>::operator+=(const Matrix& B) {
-    Matrix<Scalar>& A = *this;
-    if (A.rows() != B.rows() || A.cols() != B.cols())
-        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
-
-    Scalar* dst = A.data();
-    const Scalar* src = B.data();
-    const Index sz = A.size();
-
-#ifdef __AVX2__
-    if constexpr (std::is_same_v<Scalar, double>) {
-        Index i = 0;
-        for (; i + 3 < sz; i += 4) {
-            __m256d a = _mm256_load_pd(dst + i);
-            __m256d b = _mm256_load_pd(src + i);
-            _mm256_store_pd(dst + i, _mm256_add_pd(a, b));
-        }
-        for (; i < sz; ++i) dst[i] += src[i];
-    } else if constexpr (std::is_same_v<Scalar, float>) {
-        Index i = 0;
-        for (; i + 7 < sz; i += 8) {
-            __m256 a = _mm256_load_ps(dst + i);
-            __m256 b = _mm256_load_ps(src + i);
-            _mm256_store_ps(dst + i, _mm256_add_ps(a, b));
-        }
-        for (; i < sz; ++i) dst[i] += src[i];
-    } else {
-        for (Index i = 0; i < sz; ++i) dst[i] += src[i];
-    }
-#else
-    for (Index i = 0; i < sz; ++i) dst[i] += src[i];
-#endif
-
-    return *this;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Matrix<Scalar>& Matrix<Scalar>::operator-=(const Matrix& B) {
-    Matrix<Scalar>& A = *this;
-    if (A.rows() != B.rows() || A.cols() != B.cols()) {
-        throw ShapeMismatchException(A.rows(), A.cols(), B.rows(), B.cols());
-    }
-    Scalar* dst = A.data();
-    const Scalar* src = B.data();
-    Index size = A.size();
-
-#ifdef __AVX2__
-    if constexpr (std::is_same_v<Scalar, double>) {
-        Index i = 0;
-        for (; i + 3 < size; i += 4) {
-            __m256d a = _mm256_load_pd(dst + i);
-            __m256d b = _mm256_load_pd(src + i);
-            _mm256_store_pd(dst + i, _mm256_sub_pd(a, b));
-        }
-        for (; i < size; ++i) dst[i] -= src[i];
-    } else if constexpr (std::is_same_v<Scalar, float>) {
-        Index i = 0;
-        for (; i + 7 < size; i += 8) {
-            __m256 a = _mm256_load_ps(dst + i);
-            __m256 b = _mm256_load_ps(src + i);
-            _mm256_store_ps(dst + i, _mm256_sub_ps(a, b));
-        }
-        for (; i < size; ++i) dst[i] -= src[i];
-    } else {
-        for(Index i = 0; i < size; ++i) dst[i] -= src[i];
-    }
-#else
-    for (Index i = 0; i < size; ++i) dst[i] -= src[i];
-#endif
-
-    return *this;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
 Matrix<Scalar>& Matrix<Scalar>::operator*=(Scalar scalar) {
     Scalar* ptr = this->data();
     const Index size = this->size();
@@ -502,142 +306,6 @@ Matrix<Scalar>& Matrix<Scalar>::operator/=(Scalar scalar) {
 #endif
 
     return *this;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::transpose() const {
-    return Matrix{};
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-void Matrix<Scalar>::transpose_inplace() {
-    if (!is_square()) {
-        throw NonSquareMatrixException(rows(), cols());
-    }
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Vector<Scalar> Matrix<Scalar>::row(Index r) const {
-    if (r >= rows()) {
-        throw IndexOutOfRangeException(r, rows());
-    }
-    return Vector<Scalar>{};
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Vector<Scalar> Matrix<Scalar>::col(Index c) const {
-    if (c >= cols()) {
-        throw IndexOutOfRangeException(c, cols());
-    }
-    
-    return Vector<Scalar>{};
-}
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-void Matrix<Scalar>::fill(Scalar value) {
-    if (value == Scalar{0}) std::memset(data(), 0, size() * sizeof(Scalar));
-    else              std::fill(  data(), data() + size(), value);
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-void Matrix<Scalar>::set_identity() {
-    if (!is_square()) {
-        throw NonSquareMatrixException(rows(), cols());
-    }
-    
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Matrix<Scalar> Matrix<Scalar>::identity(Index n, StorageOrder order) {
-    Matrix result(n, n, 0.0, order);
-    for (Index i = 0; i < n; i++) {
-        result(i, i) = 1.0;
-    }
-    return result;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Scalar Matrix<Scalar>::norm() const {
-    return 0.0;
-}
-
-
-template<typename Scalar>
-Matrix<Scalar> operator*(Scalar scalar, const Matrix<Scalar>& mat) {
-    return mat * scalar;
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-Scalar& Matrix<Scalar>::at(Index r, Index c) {
-    if (r >= rows() || c >= cols()) {
-        throw IndexOutOfRangeException(r * cols() + c, rows() * cols());
-    }
-    return (*this)(r, c);
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-const Scalar& Matrix<Scalar>::at(Index r, Index c) const {
-    if (r >= rows() || c >= cols()) {
-        throw IndexOutOfRangeException(r * cols() + c, rows() * cols());
-    }
-    return (*this)(r, c);
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-bool Matrix<Scalar>::operator==(const Matrix<Scalar>& other) const {
-    if (rows_ != other.rows_ || cols_ != other.cols_ || order_ != other.order_) return false;
-    return std::equal(data(), data() + rows_ * cols_, other.data());
-}
-
-
-template<typename Scalar>
-    requires Numeric<Scalar>
-bool Matrix<Scalar>::operator!=(const Matrix<Scalar>& other) const {
-    return !(*this == other);
-}
-
-
-template<typename Scalar>
-void swap(Matrix<Scalar>& a, Matrix<Scalar>& b) noexcept {
-    a.swap(b);
-}
-
-
-template<typename Scalar>
-std::ostream& operator<<(std::ostream& os, const Matrix<Scalar>& m) {
-    os << "[";
-    for (Index i = 0; i < m.rows(); ++i) {
-        if (i > 0) os << ",\n ";
-        os << "[";
-        for (Index j = 0; j < m.cols(); ++j) {
-            if (j > 0) os << ", ";
-            os << m(i, j);
-        }
-        os << "]";
-    }
-    os << "]";
-    return os;
 }
 
 } // namespace pla
