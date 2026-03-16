@@ -13,15 +13,6 @@ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 
 option(USE_OPENMP "Enable OpenMP parallelism" OFF)
 
-if(APPLE AND USE_OPENMP)
-    # OpenMP for Mac
-    set(OPENMP_FLAGS "-Xpreprocessor -fopenmp")
-    set(OPENMP_LIBS "-L/opt/homebrew/opt/libomp/lib -lomp")
-    include_directories(/opt/homebrew/opt/libomp/include)
-
-    add_compile_options(${OPENMP_FLAGS})
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENMP_LIBS}")
-endif()
 
 # Architecture flags
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -36,10 +27,6 @@ add_compile_options(${OPT_FLAGS} ${ARCH_FLAGS})
 
 # Dependencies
 find_package(Eigen3 REQUIRED)
-if (USE_OPENMP)
-    find_package(OpenMP REQUIRED)
-endif()
-
 
 # Library
 add_library(pla INTERFACE
@@ -50,6 +37,26 @@ add_library(pla INTERFACE
 target_include_directories(pla INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(pla INTERFACE cxx_std_23)
 target_link_libraries(pla INTERFACE Eigen3::Eigen)
+
+
+if(USE_OPENMP)
+    if(APPLE)
+        # OpenMP for Mac
+        set(OPENMP_FLAGS "-Xpreprocessor -fopenmp")
+        set(OPENMP_LIBS "-L/opt/homebrew/opt/libomp/lib -lomp")
+        include_directories(/opt/homebrew/opt/libomp/include)
+
+        add_compile_options(${OPENMP_FLAGS})
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENMP_LIBS}")
+
+        target_compile_definitions(pla INTERFACE USE_OPENMP)
+    else()
+        # Linux / Windows
+        find_package(OpenMP REQUIRED)
+        target_link_libraries(pla INTERFACE OpenMP::OpenMP_CXX)
+        target_compile_definitions(pla INTERFACE USE_OPENMP)
+    endif()
+endif()
 
 # target_compile_options(pla PRIVATE
 #     -O3
@@ -76,12 +83,6 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     )
 
 endif()
-
-
-if(USE_OPENMP)
-    target_link_libraries(pla PRIVATE OpenMP::OpenMP_CXX)
-    target_compile_definitions(pla PRIVATE USE_OPENMP)
-endif() 
 
 
 # --------------------------------------------------
