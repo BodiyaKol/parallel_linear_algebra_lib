@@ -99,10 +99,12 @@ TEST(MatrixMultiplicationPerformance, RectangularSweepCompareWithEigen)
 
         double pla_time = benchmark([&] {
             auto C = A * B;
+            volatile double sink = C(0,0);
         }, repeats);
 
         double eigen_time = benchmark([&] {
-            auto C = Ae * Be;
+            auto Cе = Ae * Be;
+            volatile double sink = Cе(0,0);
         }, repeats);
 
         std::cout
