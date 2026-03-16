@@ -13,6 +13,16 @@ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 
 option(USE_OPENMP "Enable OpenMP parallelism" OFF)
 
+if(APPLE AND USE_OPENMP)
+    # OpenMP for Mac
+    set(OPENMP_FLAGS "-Xpreprocessor -fopenmp")
+    set(OPENMP_LIBS "-L/opt/homebrew/opt/libomp/lib -lomp")
+    include_directories(/opt/homebrew/opt/libomp/include)
+
+    add_compile_options(${OPENMP_FLAGS})
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENMP_LIBS}")
+endif()
+
 # Architecture flags
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set(ARCH_FLAGS -march=native -mtune=native -mavx2 -mfma)
