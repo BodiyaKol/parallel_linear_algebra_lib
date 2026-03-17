@@ -41,7 +41,7 @@ LUResult<Scalar> lu_naive(const Matrix<Scalar>& input) {
             else       U(i, j) = A(i, j);
         }
 
-    return {L, U, perm};
+    return {L, U, A, perm};
 }
 
 template<typename Scalar>
@@ -204,7 +204,7 @@ LUResult<Scalar> lu_blocked(const Matrix<Scalar>& input, Index block_size) {
         }
     }
 
-    return {L, U, perm};
+    return {L, U, A, perm};
 }
 
 }

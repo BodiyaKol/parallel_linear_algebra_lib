@@ -8,7 +8,7 @@
 
 namespace pla {
 
-template<typename Scalar>
+template<typename Scalar = double>
     requires Numeric<Scalar>
 class Vector {
 public:

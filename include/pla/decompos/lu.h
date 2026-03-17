@@ -11,6 +11,7 @@ template<typename Scalar>
 struct LUResult {
     Matrix<Scalar> L;
     Matrix<Scalar> U;
+	Matrix<Scalar> LU_packed;
     std::vector<Index> perm;
 };
 
