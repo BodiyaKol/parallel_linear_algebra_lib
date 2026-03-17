@@ -1,8 +1,25 @@
-//
-// Created by user on 17.03.2026.
-//
+#pragma once
 
-#ifndef PARALLEL_LINEAR_ALGEBRA_LIB_SOLVE_H
-#define PARALLEL_LINEAR_ALGEBRA_LIB_SOLVE_H
+#include "pla/core/matrix.h"
+#include "pla/core/vector.h"
+#include "pla/decompos/lu.h"
+#include "pla/types/index.h"
 
-#endif //PARALLEL_LINEAR_ALGEBRA_LIB_SOLVE_H
+namespace pla {
+    // using LU
+    template<typename Scalar>
+        requires Numeric<Scalar>
+    Vector<Scalar> solve(const Matrix<Scalar>& A, const Vector<Scalar>& b);
+
+    template<typename Scalar>
+        requires Numeric<Scalar>
+    Vector<Scalar> solve(const LUResult<Scalar>& lu, const Vector<Scalar>& b);
+
+    // AX = B(b1, b2, ...)
+    template<typename Scalar>
+        requires Numeric<Scalar>
+    Matrix<Scalar> solve(const Matrix<Scalar>& A, const Matrix<Scalar>& B);
+
+}
+
+#include "pla/algorithms/solve_impl.hpp"

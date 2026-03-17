@@ -11,3 +11,5 @@
 
 #include "pla/exceptions.h"
 #include "pla/execution_policy.h"
+#include "pla/algorithms/solve.h"
+#include "pla/algorithms/inverse.h"
