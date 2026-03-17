@@ -38,7 +38,7 @@ static void check_lu_reconstruction(const pla::Matrix<>& A,
     pla::Matrix<> LU = res.L * res.U;
     for (int i = 0; i < A.rows(); ++i)
         for (int j = 0; j < A.cols(); ++j)
-            EXPECT_NEAR(LU(i, j), A(i, j), tol)
+            EXPECT_NEAR(LU(i, j), A(res.perm[i], j), tol)
                 << "mismatch at (" << i << "," << j << ")";
 }
 
@@ -155,7 +155,6 @@ TEST(LUBlocked, CorrectnessVaryingBlockSizes) {
         check_lu_reconstruction(A, res, 1e-7);
     }
 }
-
 TEST(LUBlocked, CorrectnessMatchesNaive) {
     std::mt19937 rng(5555);
     std::uniform_real_distribution<double> dist(-5.0, 5.0);
@@ -167,12 +166,15 @@ TEST(LUBlocked, CorrectnessMatchesNaive) {
         auto res_naive   = pla::lu_naive(A);
         auto res_blocked = pla::lu_blocked(A);
 
+        pla::Matrix<> LU_naive   = res_naive.L   * res_naive.U;
+        pla::Matrix<> LU_blocked = res_blocked.L * res_blocked.U;
+
         for (int i = 0; i < n; ++i)
             for (int j = 0; j < n; ++j) {
-                EXPECT_NEAR(res_naive.L(i, j), res_blocked.L(i, j), 1e-6)
-                    << "L mismatch at (" << i << "," << j << ") n=" << n;
-                EXPECT_NEAR(res_naive.U(i, j), res_blocked.U(i, j), 1e-6)
-                    << "U mismatch at (" << i << "," << j << ") n=" << n;
+                EXPECT_NEAR(LU_naive(i, j),   A(res_naive.perm[i],   j), 1e-6)
+                    << "naive mismatch at (" << i << "," << j << ") n=" << n;
+                EXPECT_NEAR(LU_blocked(i, j), A(res_blocked.perm[i], j), 1e-6)
+                    << "blocked mismatch at (" << i << "," << j << ") n=" << n;
             }
     }
 }

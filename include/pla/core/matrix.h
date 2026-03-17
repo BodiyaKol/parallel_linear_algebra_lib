@@ -182,3 +182,4 @@ std::ostream& operator<<(std::ostream& os, const Matrix<Scalar>& m);
 #include "pla/opt/matrix_add.hpp"
 #include "pla/opt/matrix_multiplication.hpp"
 #include "pla/decompos/lu.h"
+#include "pla/decompos/determinant.h"
