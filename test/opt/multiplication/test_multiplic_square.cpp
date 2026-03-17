@@ -102,7 +102,7 @@ TEST(MatrixMultiplication, PerformanceCompareEigen) {
         }
         double avg_eigen = total_eigen / repeats;
 
-        std::cout << "n=" << n << ": PLA avg=" << avg_pla << "s, Eigen avg=" << avg_eigen << "s" << std::endl;
+        std::cout << "n=" << n << ": PLA avg=" << avg_pla << "s, Eigen avg=" << avg_eigen << "s, ratio=" << (avg_pla / avg_eigen) << std::endl;
 
         // Verify correctness
         pla::Matrix Cres = A * B;
