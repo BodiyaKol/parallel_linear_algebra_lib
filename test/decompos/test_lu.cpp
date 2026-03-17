@@ -30,7 +30,7 @@ static void sync_to_eigen(const pla::Matrix<>& src, Eigen::MatrixXd& dst) {
 }
 
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+
 
 static void check_lu_reconstruction(const pla::Matrix<>& A,
                                      const pla::LUResult<double>& res,
@@ -57,7 +57,7 @@ static void check_U_shape(const pla::Matrix<>& U) {
 }
 
 
-// ─── correctness: naive ───────────────────────────────────────────────────────
+
 
 TEST(LUNaive, CorrectnessSmall) {
     std::mt19937 rng(1111);
@@ -123,7 +123,7 @@ TEST(LUNaive, ThrowsOnNonSquare) {
 }
 
 
-// ─── correctness: blocked ─────────────────────────────────────────────────────
+
 
 TEST(LUBlocked, CorrectnessSmall) {
     std::mt19937 rng(3333);
@@ -215,7 +215,7 @@ TEST(LUBlocked, ThrowsOnNonSquare) {
 }
 
 
-// ─── performance ──────────────────────────────────────────────────────────────
+
 
 TEST(LUPerformance, CompareEigen) {
     std::mt19937 rng(42);
