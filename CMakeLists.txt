@@ -41,17 +41,19 @@ target_link_libraries(pla INTERFACE Eigen3::Eigen)
 
 if(USE_OPENMP)
     if(APPLE)
-        # OpenMP for Mac
-        set(OPENMP_FLAGS "-Xpreprocessor -fopenmp")
-        set(OPENMP_LIBS "-L/opt/homebrew/opt/libomp/lib -lomp")
-        include_directories(/opt/homebrew/opt/libomp/include)
-
-        add_compile_options(${OPENMP_FLAGS})
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENMP_LIBS}")
-
-        target_compile_definitions(pla INTERFACE USE_OPENMP)
+        execute_process(
+                COMMAND brew --prefix libomp
+                OUTPUT_VARIABLE LIBOMP_PREFIX
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        target_compile_options(pla INTERFACE
+                -Xpreprocessor
+                -fopenmp
+        )
+        target_include_directories(pla INTERFACE ${LIBOMP_PREFIX}/include)
+        target_link_libraries(pla INTERFACE ${LIBOMP_PREFIX}/lib/libomp.dylib)
+        target_compile_definitions(pla INTERFACE USE_OPENMP _OPENMP)
     else()
-        # Linux / Windows
         find_package(OpenMP REQUIRED)
         target_link_libraries(pla INTERFACE OpenMP::OpenMP_CXX)
         target_compile_definitions(pla INTERFACE USE_OPENMP)
