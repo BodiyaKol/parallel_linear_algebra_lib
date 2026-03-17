@@ -11,6 +11,41 @@ namespace pla {
 
 template<typename Scalar>
     requires Numeric<Scalar>
+LUResult<Scalar> lu_naive(const Matrix<Scalar>& input) {
+    if (!input.is_square())
+        throw std::invalid_argument("LU: matrix must be square");
+
+    Index n = input.rows();
+    Matrix<Scalar> A = input;
+    std::vector<Index> perm(n);
+    for (Index i = 0; i < n; i++) perm[i] = i;
+
+    for (Index k = 0; k < n; k++) {
+        Scalar pivot = A(k, k);
+        if (std::abs(pivot) < 1e-12)
+            throw std::runtime_error("LU naive: zero pivot");
+
+        for (Index i = k + 1; i < n; i++) {
+            A(i, k) /= pivot;
+            for (Index j = k + 1; j < n; j++)
+                A(i, j) -= A(i, k) * A(k, j);
+        }
+    }
+
+    Matrix<Scalar> L = Matrix<Scalar>::identity(n);
+    Matrix<Scalar> U(n, n, Scalar{0});
+
+    for (Index i = 0; i < n; i++)
+        for (Index j = 0; j < n; j++) {
+            if (i > j) L(i, j) = A(i, j);
+            else       U(i, j) = A(i, j);
+        }
+
+    return {L, U, perm};
+}
+
+template<typename Scalar>
+    requires Numeric<Scalar>
 static Matrix<Scalar> extract_block(const Matrix<Scalar>& A, Index row_start, Index row_end,
                                             Index col_start, Index col_end) {
     Index rows = row_end - row_start;
