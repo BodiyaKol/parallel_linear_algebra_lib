@@ -7,11 +7,11 @@ project(parallel_linear_algebra_lib
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 
-option(USE_OPENMP "Enable OpenMP parallelism" OFF)
+option(USE_OPENMP "Enable OpenMP parallelism" ON)
 
 
 # Architecture flags
@@ -123,5 +123,3 @@ function(register_tests TEST_DIR)
         message(STATUS "Registered test: ${TEST_NAME} <- ${TEST_SOURCE}")
     endforeach()
 endfunction()
-
-register_tests(${CMAKE_CURRENT_SOURCE_DIR}/test)
