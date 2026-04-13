@@ -32,7 +32,8 @@ find_package(Eigen3 REQUIRED)
 add_library(pla INTERFACE
         include/pla/types/shape.h
         include/pla/core/vector_impl.hpp
-        include/pla/decompos/lu_impl.hpp)
+        include/pla/decompos/lu_impl.hpp
+        include/pla/decompos/qr_impl.hpp)
 
 target_include_directories(pla INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(pla INTERFACE cxx_std_23)
@@ -100,7 +101,7 @@ if(NOT GTest_FOUND)
 
     FetchContent_Declare(
         googletest
-        URL https://github.com/google/googletest/archive/refs/tags/release-1.14.0.zip
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
     )
 
     FetchContent_MakeAvailable(googletest)
