@@ -16,7 +16,9 @@ Vector<Scalar> Vector<Scalar>::operator+(const Vector& other) const {
     if (dimension() != other.dimension()) {
         throw SizeMismatchException(dimension(), other.dimension());
     }
-    return Vector();
+    Vector result(*this);
+    result += other;
+    return result;
 }
 
 template<typename Scalar>
@@ -25,19 +27,25 @@ Vector<Scalar> Vector<Scalar>::operator-(const Vector& other) const {
     if (dimension() != other.dimension()) {
         throw SizeMismatchException(dimension(), other.dimension());
     }
-    return Vector();
+    Vector result(*this);
+    result -= other;
+    return result;
 }
 
 template<typename Scalar>
     requires Numeric<Scalar>
 Vector<Scalar> Vector<Scalar>::operator-() const {
-    return Vector();
+    Vector result(*this);
+    result *= static_cast<Scalar>(-1);
+    return result;
 }
 
 template<typename Scalar>
     requires Numeric<Scalar>
 Vector<Scalar> Vector<Scalar>::operator*(Scalar scalar) const {
-    return Vector();
+    Vector result(*this);
+    result *= scalar;
+    return result;
 }
 
 template<typename Scalar>
@@ -46,7 +54,9 @@ Vector<Scalar> Vector<Scalar>::operator/(Scalar scalar) const {
     if (std::abs(scalar) < 1e-15) {
         throw InvalidScalarException("Division by zero");
     }
-    return Vector();
+    Vector result(*this);
+    result /= scalar;
+    return result;
 }
 
 template<typename Scalar>
@@ -87,13 +97,12 @@ Vector<Scalar>& Vector<Scalar>::operator/=(Scalar scalar) {
     return *this;
 }
 
-
 template<typename Scalar>
     requires Numeric<Scalar>
 Scalar Vector<Scalar>::dot(const Vector<Scalar>& other) const {
     if (dimension() != other.dimension())
         throw SizeMismatchException(dimension(), other.dimension());
-    Scalar sum = 0.0;
+    Scalar sum = Scalar{};
     for (Index i = 0; i < dimension(); ++i)
         sum += coordinates_[i] * other[i];
     return sum;
@@ -116,7 +125,7 @@ template<typename Scalar>
 void Vector<Scalar>::normalize() {
     Scalar n = norm();
     if (n < 1e-15)
-        throw std::runtime_error("Cannot normalize zero vector");
+        throw ZeroVectorException();
     (*this) /= n;
 }
 
@@ -125,16 +134,15 @@ template<typename Scalar>
 Vector<Scalar> Vector<Scalar>::normalized() const {
     Scalar n = norm();
     if (n < 1e-15)
-        throw std::runtime_error("Cannot normalize zero vector");
-    return (*this) * (1.0 / n);
+        throw ZeroVectorException();
+    return (*this) / n;
 }
 
-// TODO 13: Перевірити чи вектор одиничний
 template<typename Scalar>
     requires Numeric<Scalar>
 bool Vector<Scalar>::is_unit(Scalar tolerance) const {
     Scalar n = norm();
-    return std::abs(n - 1.0) < tolerance;
+    return std::abs(n - static_cast<Scalar>(1)) < tolerance;
 }
 
 template<typename Scalar>
@@ -191,4 +199,4 @@ std::ostream& operator<<(std::ostream& os, const Vector<Scalar>& v) {
 
 } // namespace pla
 
-#endif //PARALLEL_LINEAR_ALGEBRA_LIB_VECTOR_IMPL_H
+#endif // PARALLEL_LINEAR_ALGEBRA_LIB_VECTOR_IMPL_H
