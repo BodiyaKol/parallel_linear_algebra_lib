@@ -18,6 +18,8 @@
 #include <immintrin.h>
 #elif defined(__AVX2__)
 #include <immintrin.h>
+#elif defined(__ARM_NEON)
+#include <arm_neon.h>
 #endif
 
 namespace pla {
@@ -78,8 +80,7 @@ struct QRWorkspace {
 };
 
 // ---------------------------------------------------------------
-//  SIMD dot — AVX-512 with proper horizontal reduction at end,
-//  NOT inside the loop (avoid _mm512_reduce_add_pd per iteration)
+//  SIMD primitives — AVX-512 primary, AVX2 fallback, NEON, scalar last
 // ---------------------------------------------------------------
 template<typename Scalar>
 [[gnu::always_inline]] inline
@@ -149,6 +150,40 @@ Scalar simd_dot(const Scalar* __restrict__ x,
             v0 = _mm256_fmadd_ps(_mm256_loadu_ps(x+i),_mm256_loadu_ps(y+i),v0);
         float tmp[8]; _mm256_storeu_ps(tmp,v0);
         for (int k=0;k<8;++k) acc+=tmp[k];
+        for (; i < len; ++i) acc += x[i]*y[i];
+        return acc;
+    }
+#elif defined(__ARM_NEON)
+    if constexpr (std::is_same_v<Scalar, double>) {
+        float64x2_t v0 = vdupq_n_f64(0.0), v1 = vdupq_n_f64(0.0),
+                    v2 = vdupq_n_f64(0.0), v3 = vdupq_n_f64(0.0);
+        Index i = 0;
+        for (; i + 7 < len; i += 8) {
+            v0 = vfmaq_f64(v0, vld1q_f64(x+i),   vld1q_f64(y+i));
+            v1 = vfmaq_f64(v1, vld1q_f64(x+i+2), vld1q_f64(y+i+2));
+            v2 = vfmaq_f64(v2, vld1q_f64(x+i+4), vld1q_f64(y+i+4));
+            v3 = vfmaq_f64(v3, vld1q_f64(x+i+6), vld1q_f64(y+i+6));
+        }
+        v0 = vaddq_f64(vaddq_f64(v0, v1), vaddq_f64(v2, v3));
+        for (; i + 1 < len; i += 2)
+            v0 = vfmaq_f64(v0, vld1q_f64(x+i), vld1q_f64(y+i));
+        acc = vaddvq_f64(v0);
+        for (; i < len; ++i) acc += x[i]*y[i];
+        return acc;
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        float32x4_t v0 = vdupq_n_f32(0.f), v1 = vdupq_n_f32(0.f),
+                    v2 = vdupq_n_f32(0.f), v3 = vdupq_n_f32(0.f);
+        Index i = 0;
+        for (; i + 15 < len; i += 16) {
+            v0 = vfmaq_f32(v0, vld1q_f32(x+i),    vld1q_f32(y+i));
+            v1 = vfmaq_f32(v1, vld1q_f32(x+i+4),  vld1q_f32(y+i+4));
+            v2 = vfmaq_f32(v2, vld1q_f32(x+i+8),  vld1q_f32(y+i+8));
+            v3 = vfmaq_f32(v3, vld1q_f32(x+i+12), vld1q_f32(y+i+12));
+        }
+        v0 = vaddq_f32(vaddq_f32(v0, v1), vaddq_f32(v2, v3));
+        for (; i + 3 < len; i += 4)
+            v0 = vfmaq_f32(v0, vld1q_f32(x+i), vld1q_f32(y+i));
+        acc = vaddvq_f32(v0);
         for (; i < len; ++i) acc += x[i]*y[i];
         return acc;
     }
@@ -223,6 +258,36 @@ void simd_axpy(Scalar* __restrict__ dst,
         for (; j < len; ++j) dst[j] += alpha*src[j];
         return;
     }
+#elif defined(__ARM_NEON)
+    if constexpr (std::is_same_v<Scalar, double>) {
+        const float64x2_t va = vdupq_n_f64(alpha);
+        Index j = 0;
+        for (; j + 7 < len; j += 8) {
+            __builtin_prefetch(src+j+32, 0, 1);
+            vst1q_f64(dst+j,   vfmaq_f64(vld1q_f64(dst+j),   va, vld1q_f64(src+j)));
+            vst1q_f64(dst+j+2, vfmaq_f64(vld1q_f64(dst+j+2), va, vld1q_f64(src+j+2)));
+            vst1q_f64(dst+j+4, vfmaq_f64(vld1q_f64(dst+j+4), va, vld1q_f64(src+j+4)));
+            vst1q_f64(dst+j+6, vfmaq_f64(vld1q_f64(dst+j+6), va, vld1q_f64(src+j+6)));
+        }
+        for (; j + 1 < len; j += 2)
+            vst1q_f64(dst+j, vfmaq_f64(vld1q_f64(dst+j), va, vld1q_f64(src+j)));
+        for (; j < len; ++j) dst[j] += alpha*src[j];
+        return;
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        const float32x4_t va = vdupq_n_f32(alpha);
+        Index j = 0;
+        for (; j + 15 < len; j += 16) {
+            __builtin_prefetch(src+j+64, 0, 1);
+            vst1q_f32(dst+j,    vfmaq_f32(vld1q_f32(dst+j),    va, vld1q_f32(src+j)));
+            vst1q_f32(dst+j+4,  vfmaq_f32(vld1q_f32(dst+j+4),  va, vld1q_f32(src+j+4)));
+            vst1q_f32(dst+j+8,  vfmaq_f32(vld1q_f32(dst+j+8),  va, vld1q_f32(src+j+8)));
+            vst1q_f32(dst+j+12, vfmaq_f32(vld1q_f32(dst+j+12), va, vld1q_f32(src+j+12)));
+        }
+        for (; j + 3 < len; j += 4)
+            vst1q_f32(dst+j, vfmaq_f32(vld1q_f32(dst+j), va, vld1q_f32(src+j)));
+        for (; j < len; ++j) dst[j] += alpha*src[j];
+        return;
+    }
 #endif
     #pragma omp simd
     for (Index j = 0; j < len; ++j) dst[j] += alpha*src[j];
@@ -293,6 +358,36 @@ void simd_naxpy(Scalar* __restrict__ dst,
         for (; j < len; ++j) dst[j] -= alpha*src[j];
         return;
     }
+#elif defined(__ARM_NEON)
+    if constexpr (std::is_same_v<Scalar, double>) {
+        const float64x2_t va = vdupq_n_f64(alpha);
+        Index j = 0;
+        for (; j + 7 < len; j += 8) {
+            __builtin_prefetch(src+j+32, 0, 1);
+            vst1q_f64(dst+j,   vfmsq_f64(vld1q_f64(dst+j),   va, vld1q_f64(src+j)));
+            vst1q_f64(dst+j+2, vfmsq_f64(vld1q_f64(dst+j+2), va, vld1q_f64(src+j+2)));
+            vst1q_f64(dst+j+4, vfmsq_f64(vld1q_f64(dst+j+4), va, vld1q_f64(src+j+4)));
+            vst1q_f64(dst+j+6, vfmsq_f64(vld1q_f64(dst+j+6), va, vld1q_f64(src+j+6)));
+        }
+        for (; j + 1 < len; j += 2)
+            vst1q_f64(dst+j, vfmsq_f64(vld1q_f64(dst+j), va, vld1q_f64(src+j)));
+        for (; j < len; ++j) dst[j] -= alpha*src[j];
+        return;
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        const float32x4_t va = vdupq_n_f32(alpha);
+        Index j = 0;
+        for (; j + 15 < len; j += 16) {
+            __builtin_prefetch(src+j+64, 0, 1);
+            vst1q_f32(dst+j,    vfmsq_f32(vld1q_f32(dst+j),    va, vld1q_f32(src+j)));
+            vst1q_f32(dst+j+4,  vfmsq_f32(vld1q_f32(dst+j+4),  va, vld1q_f32(src+j+4)));
+            vst1q_f32(dst+j+8,  vfmsq_f32(vld1q_f32(dst+j+8),  va, vld1q_f32(src+j+8)));
+            vst1q_f32(dst+j+12, vfmsq_f32(vld1q_f32(dst+j+12), va, vld1q_f32(src+j+12)));
+        }
+        for (; j + 3 < len; j += 4)
+            vst1q_f32(dst+j, vfmsq_f32(vld1q_f32(dst+j), va, vld1q_f32(src+j)));
+        for (; j < len; ++j) dst[j] -= alpha*src[j];
+        return;
+    }
 #endif
     #pragma omp simd
     for (Index j = 0; j < len; ++j) dst[j] -= alpha*src[j];
@@ -320,14 +415,59 @@ void fused_row_dot(const Scalar* __restrict__ row,
             const __m512d vrv = _mm512_set1_pd(rv);
             Index j = 0;
             for (; j + 7 < nb; j += 8) {
-                // Y_col[j*pr+r] .. Y_col[(j+7)*pr+r] — stride pr, gather or scalar
-                // Use scalar here: nb≤64 so max 8 gathers, cheaper than overhead
                 __m512d yw; double* ywp = reinterpret_cast<double*>(&yw);
                 for (int jj = 0; jj < 8; ++jj) ywp[jj] = Y_col[(j+jj)*panel_rows + r];
                 __m512d wv = _mm512_loadu_pd(w + j);
                 _mm512_storeu_pd(w + j, _mm512_fmadd_pd(vrv, yw, wv));
             }
             for (; j < nb; ++j) w[j] += rv * Y_col[j * panel_rows + r];
+        }
+        return;
+    }
+#elif defined(__ARM_NEON)
+    if constexpr (std::is_same_v<Scalar, double>) {
+        const Index nb4 = nb & ~Index{3};
+        Index r = 0;
+        for (; r + 1 < panel_rows; r += 2) {
+            const float64x2_t rr = vld1q_f64(row + r);
+            Index j = 0;
+            for (; j < nb4; j += 4) {
+                w[j]   += vaddvq_f64(vmulq_f64(rr, vld1q_f64(Y_col + j*panel_rows + r)));
+                w[j+1] += vaddvq_f64(vmulq_f64(rr, vld1q_f64(Y_col + (j+1)*panel_rows + r)));
+                w[j+2] += vaddvq_f64(vmulq_f64(rr, vld1q_f64(Y_col + (j+2)*panel_rows + r)));
+                w[j+3] += vaddvq_f64(vmulq_f64(rr, vld1q_f64(Y_col + (j+3)*panel_rows + r)));
+            }
+            for (; j < nb; ++j)
+                w[j] += vaddvq_f64(vmulq_f64(rr, vld1q_f64(Y_col + j*panel_rows + r)));
+        }
+
+        for (; r < panel_rows; ++r) {
+            const Scalar rv = row[r];
+            if (rv == Scalar{0}) continue;
+            for (Index j = 0; j < nb; ++j)
+                w[j] += rv * Y_col[j * panel_rows + r];
+        }
+        return;
+    } else if constexpr (std::is_same_v<Scalar, float>) {
+        const Index nb4 = nb & ~Index{3};
+        Index r = 0;
+        for (; r + 3 < panel_rows; r += 4) {
+            const float32x4_t rr = vld1q_f32(row + r);
+            Index j = 0;
+            for (; j < nb4; j += 4) {
+                w[j]   += vaddvq_f32(vmulq_f32(rr, vld1q_f32(Y_col + j*panel_rows + r)));
+                w[j+1] += vaddvq_f32(vmulq_f32(rr, vld1q_f32(Y_col + (j+1)*panel_rows + r)));
+                w[j+2] += vaddvq_f32(vmulq_f32(rr, vld1q_f32(Y_col + (j+2)*panel_rows + r)));
+                w[j+3] += vaddvq_f32(vmulq_f32(rr, vld1q_f32(Y_col + (j+3)*panel_rows + r)));
+            }
+            for (; j < nb; ++j)
+                w[j] += vaddvq_f32(vmulq_f32(rr, vld1q_f32(Y_col + j*panel_rows + r)));
+        }
+        for (; r < panel_rows; ++r) {
+            const Scalar rv = row[r];
+            if (rv == Scalar{0}) continue;
+            for (Index j = 0; j < nb; ++j)
+                w[j] += rv * Y_col[j * panel_rows + r];
         }
         return;
     }
