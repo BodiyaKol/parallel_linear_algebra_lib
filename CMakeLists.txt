@@ -123,3 +123,5 @@ function(register_tests TEST_DIR)
         message(STATUS "Registered test: ${TEST_NAME} <- ${TEST_SOURCE}")
     endforeach()
 endfunction()
+
+register_tests(${CMAKE_CURRENT_SOURCE_DIR}/test)

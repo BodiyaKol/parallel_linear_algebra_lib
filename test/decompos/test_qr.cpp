@@ -256,7 +256,7 @@ TEST(QRPerformance, CompareEigen) {
 
     std::vector<std::pair<int,int>> sizes = {
         {32, 32}, {64, 64}, {128, 64}, {256, 128},
-        {512, 256}, {512, 512}, {1024, 256}, {1024, 1024}
+        {511, 255}, {511, 511}, {1023, 255}, {1023, 1023}
     };
     const int repeats = 4;
 
