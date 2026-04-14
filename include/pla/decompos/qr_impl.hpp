@@ -45,7 +45,11 @@ struct AlignedAllocator {
 template<typename Scalar>
 using AlignedVec = std::vector<Scalar, AlignedAllocator<Scalar, 64>>;
 
-static constexpr Index QR_BLOCK = 64;
+// OMP parallel region spawn costs ~5-15 µs on typical Linux.
+// Only worth it when work > ~50K doubles of FMA.
+static constexpr Index OMP_ROWS_THRESHOLD  = 128;   // min rows to parallelise
+static constexpr Index OMP_WORK_THRESHOLD  = 65536; // min rows*cols to parallelise
+static constexpr Index QR_BLOCK            = 48;
 
 template<typename Scalar>
 struct QRWorkspace {
@@ -63,20 +67,20 @@ struct QRWorkspace {
         nthreads = omp_get_max_threads();
 #endif
         const Index max_dim = std::max(m, n);
-        Y_col.assign   (static_cast<std::size_t>(m * block),              Scalar{0});
-        taus.assign    (static_cast<std::size_t>(block),                  Scalar{0});
-        W.assign       (static_cast<std::size_t>(block * max_dim),        Scalar{0});
-        W_Q.assign     (static_cast<std::size_t>(m * block),              Scalar{0});
-        T_mat.assign   (static_cast<std::size_t>(block * block),          Scalar{0});
-        v_buf.assign   (static_cast<std::size_t>(m),                      Scalar{0});
-        thread_W.assign(static_cast<std::size_t>(nthreads * block * max_dim), Scalar{0});
+        Y_col.assign   (static_cast<std::size_t>(m * block),                    Scalar{0});
+        taus.assign    (static_cast<std::size_t>(block),                        Scalar{0});
+        W.assign       (static_cast<std::size_t>(block * max_dim),              Scalar{0});
+        W_Q.assign     (static_cast<std::size_t>(m * block),                    Scalar{0});
+        T_mat.assign   (static_cast<std::size_t>(block * block),                Scalar{0});
+        v_buf.assign   (static_cast<std::size_t>(m),                            Scalar{0});
+        thread_W.assign(static_cast<std::size_t>(nthreads * block * max_dim),   Scalar{0});
     }
 };
 
 // ---------------------------------------------------------------
-//  SIMD primitives — AVX-512 primary, AVX2 fallback, scalar last
+//  SIMD dot — AVX-512 with proper horizontal reduction at end,
+//  NOT inside the loop (avoid _mm512_reduce_add_pd per iteration)
 // ---------------------------------------------------------------
-
 template<typename Scalar>
 [[gnu::always_inline]] inline
 Scalar simd_dot(const Scalar* __restrict__ x,
@@ -86,13 +90,19 @@ Scalar simd_dot(const Scalar* __restrict__ x,
     Scalar acc{0};
 #if defined(__AVX512F__)
     if constexpr (std::is_same_v<Scalar, double>) {
-        __m512d v0 = _mm512_setzero_pd(), v1 = _mm512_setzero_pd();
+        __m512d v0 = _mm512_setzero_pd(), v1 = _mm512_setzero_pd(),
+                v2 = _mm512_setzero_pd(), v3 = _mm512_setzero_pd();
         Index i = 0;
-        for (; i + 15 < len; i += 16) {
-            v0 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i),   _mm512_loadu_pd(y+i),   v0);
-            v1 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i+8), _mm512_loadu_pd(y+i+8), v1);
+        for (; i + 31 < len; i += 32) {
+            v0 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i),    _mm512_loadu_pd(y+i),    v0);
+            v1 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i+8),  _mm512_loadu_pd(y+i+8),  v1);
+            v2 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i+16), _mm512_loadu_pd(y+i+16), v2);
+            v3 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i+24), _mm512_loadu_pd(y+i+24), v3);
         }
-        acc = _mm512_reduce_add_pd(_mm512_add_pd(v0, v1));
+        v0 = _mm512_add_pd(_mm512_add_pd(v0,v1), _mm512_add_pd(v2,v3));
+        for (; i + 7 < len; i += 8)
+            v0 = _mm512_fmadd_pd(_mm512_loadu_pd(x+i), _mm512_loadu_pd(y+i), v0);
+        acc = _mm512_reduce_add_pd(v0);
         for (; i < len; ++i) acc += x[i]*y[i];
         return acc;
     } else if constexpr (std::is_same_v<Scalar, float>) {
@@ -102,7 +112,10 @@ Scalar simd_dot(const Scalar* __restrict__ x,
             v0 = _mm512_fmadd_ps(_mm512_loadu_ps(x+i),    _mm512_loadu_ps(y+i),    v0);
             v1 = _mm512_fmadd_ps(_mm512_loadu_ps(x+i+16), _mm512_loadu_ps(y+i+16), v1);
         }
-        acc = _mm512_reduce_add_ps(_mm512_add_ps(v0, v1));
+        v0 = _mm512_add_ps(v0,v1);
+        for (; i + 15 < len; i += 16)
+            v0 = _mm512_fmadd_ps(_mm512_loadu_ps(x+i), _mm512_loadu_ps(y+i), v0);
+        acc = _mm512_reduce_add_ps(v0);
         for (; i < len; ++i) acc += x[i]*y[i];
         return acc;
     }
@@ -117,10 +130,10 @@ Scalar simd_dot(const Scalar* __restrict__ x,
             v2 = _mm256_fmadd_pd(_mm256_loadu_pd(x+i+8),  _mm256_loadu_pd(y+i+8),  v2);
             v3 = _mm256_fmadd_pd(_mm256_loadu_pd(x+i+12), _mm256_loadu_pd(y+i+12), v3);
         }
-        v0 = _mm256_add_pd(_mm256_add_pd(v0,v1), _mm256_add_pd(v2,v3));
+        v0 = _mm256_add_pd(_mm256_add_pd(v0,v1),_mm256_add_pd(v2,v3));
         for (; i + 3 < len; i += 4)
-            v0 = _mm256_fmadd_pd(_mm256_loadu_pd(x+i), _mm256_loadu_pd(y+i), v0);
-        double tmp[4]; _mm256_storeu_pd(tmp, v0);
+            v0 = _mm256_fmadd_pd(_mm256_loadu_pd(x+i),_mm256_loadu_pd(y+i),v0);
+        double tmp[4]; _mm256_storeu_pd(tmp,v0);
         acc = tmp[0]+tmp[1]+tmp[2]+tmp[3];
         for (; i < len; ++i) acc += x[i]*y[i];
         return acc;
@@ -131,10 +144,10 @@ Scalar simd_dot(const Scalar* __restrict__ x,
             v0 = _mm256_fmadd_ps(_mm256_loadu_ps(x+i),   _mm256_loadu_ps(y+i),   v0);
             v1 = _mm256_fmadd_ps(_mm256_loadu_ps(x+i+8), _mm256_loadu_ps(y+i+8), v1);
         }
-        v0 = _mm256_add_ps(v0, v1);
+        v0 = _mm256_add_ps(v0,v1);
         for (; i + 7 < len; i += 8)
-            v0 = _mm256_fmadd_ps(_mm256_loadu_ps(x+i), _mm256_loadu_ps(y+i), v0);
-        float tmp[8]; _mm256_storeu_ps(tmp, v0);
+            v0 = _mm256_fmadd_ps(_mm256_loadu_ps(x+i),_mm256_loadu_ps(y+i),v0);
+        float tmp[8]; _mm256_storeu_ps(tmp,v0);
         for (int k=0;k<8;++k) acc+=tmp[k];
         for (; i < len; ++i) acc += x[i]*y[i];
         return acc;
@@ -151,24 +164,33 @@ void simd_axpy(Scalar* __restrict__ dst,
                const Scalar* __restrict__ src,
                Scalar alpha, Index len) noexcept
 {
+    if (len <= 0) return;  // guard against negative/zero length
 #if defined(__AVX512F__)
     if constexpr (std::is_same_v<Scalar, double>) {
         const __m512d va = _mm512_set1_pd(alpha);
         Index j = 0;
-        for (; j + 15 < len; j += 16) {
-            __builtin_prefetch(src+j+64, 0, 1);
-            _mm512_storeu_pd(dst+j,   _mm512_fmadd_pd(va, _mm512_loadu_pd(src+j),   _mm512_loadu_pd(dst+j)));
-            _mm512_storeu_pd(dst+j+8, _mm512_fmadd_pd(va, _mm512_loadu_pd(src+j+8), _mm512_loadu_pd(dst+j+8)));
+        for (; j + 31 < len; j += 32) {
+            __builtin_prefetch(src+j+128, 0, 1);
+            _mm512_storeu_pd(dst+j,    _mm512_fmadd_pd(va,_mm512_loadu_pd(src+j),    _mm512_loadu_pd(dst+j)));
+            _mm512_storeu_pd(dst+j+8,  _mm512_fmadd_pd(va,_mm512_loadu_pd(src+j+8),  _mm512_loadu_pd(dst+j+8)));
+            _mm512_storeu_pd(dst+j+16, _mm512_fmadd_pd(va,_mm512_loadu_pd(src+j+16), _mm512_loadu_pd(dst+j+16)));
+            _mm512_storeu_pd(dst+j+24, _mm512_fmadd_pd(va,_mm512_loadu_pd(src+j+24), _mm512_loadu_pd(dst+j+24)));
         }
+        for (; j + 7 < len; j += 8)
+            _mm512_storeu_pd(dst+j, _mm512_fmadd_pd(va,_mm512_loadu_pd(src+j),_mm512_loadu_pd(dst+j)));
         for (; j < len; ++j) dst[j] += alpha*src[j];
         return;
     } else if constexpr (std::is_same_v<Scalar, float>) {
         const __m512 va = _mm512_set1_ps(alpha);
         Index j = 0;
-        for (; j + 31 < len; j += 32) {
-            _mm512_storeu_ps(dst+j,    _mm512_fmadd_ps(va, _mm512_loadu_ps(src+j),    _mm512_loadu_ps(dst+j)));
-            _mm512_storeu_ps(dst+j+16, _mm512_fmadd_ps(va, _mm512_loadu_ps(src+j+16), _mm512_loadu_ps(dst+j+16)));
+        for (; j + 63 < len; j += 64) {
+            _mm512_storeu_ps(dst+j,    _mm512_fmadd_ps(va,_mm512_loadu_ps(src+j),    _mm512_loadu_ps(dst+j)));
+            _mm512_storeu_ps(dst+j+16, _mm512_fmadd_ps(va,_mm512_loadu_ps(src+j+16), _mm512_loadu_ps(dst+j+16)));
+            _mm512_storeu_ps(dst+j+32, _mm512_fmadd_ps(va,_mm512_loadu_ps(src+j+32), _mm512_loadu_ps(dst+j+32)));
+            _mm512_storeu_ps(dst+j+48, _mm512_fmadd_ps(va,_mm512_loadu_ps(src+j+48), _mm512_loadu_ps(dst+j+48)));
         }
+        for (; j + 15 < len; j += 16)
+            _mm512_storeu_ps(dst+j, _mm512_fmadd_ps(va,_mm512_loadu_ps(src+j),_mm512_loadu_ps(dst+j)));
         for (; j < len; ++j) dst[j] += alpha*src[j];
         return;
     }
@@ -177,7 +199,7 @@ void simd_axpy(Scalar* __restrict__ dst,
         const __m256d va = _mm256_set1_pd(alpha);
         Index j = 0;
         for (; j + 15 < len; j += 16) {
-            __builtin_prefetch(src+j+64, 0, 1);
+            __builtin_prefetch(src+j+64,  0, 1);
             _mm256_storeu_pd(dst+j,    _mm256_fmadd_pd(va,_mm256_loadu_pd(src+j),    _mm256_loadu_pd(dst+j)));
             _mm256_storeu_pd(dst+j+4,  _mm256_fmadd_pd(va,_mm256_loadu_pd(src+j+4),  _mm256_loadu_pd(dst+j+4)));
             _mm256_storeu_pd(dst+j+8,  _mm256_fmadd_pd(va,_mm256_loadu_pd(src+j+8),  _mm256_loadu_pd(dst+j+8)));
@@ -212,24 +234,33 @@ void simd_naxpy(Scalar* __restrict__ dst,
                 const Scalar* __restrict__ src,
                 Scalar alpha, Index len) noexcept
 {
+    if (len <= 0) return;  // guard against negative/zero length
 #if defined(__AVX512F__)
     if constexpr (std::is_same_v<Scalar, double>) {
         const __m512d va = _mm512_set1_pd(alpha);
         Index j = 0;
-        for (; j + 15 < len; j += 16) {
-            __builtin_prefetch(src+j+64, 0, 1);
-            _mm512_storeu_pd(dst+j,   _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j),   _mm512_loadu_pd(dst+j)));
-            _mm512_storeu_pd(dst+j+8, _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j+8), _mm512_loadu_pd(dst+j+8)));
+        for (; j + 31 < len; j += 32) {
+            __builtin_prefetch(src+j+128, 0, 1);
+            _mm512_storeu_pd(dst+j,    _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j),    _mm512_loadu_pd(dst+j)));
+            _mm512_storeu_pd(dst+j+8,  _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j+8),  _mm512_loadu_pd(dst+j+8)));
+            _mm512_storeu_pd(dst+j+16, _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j+16), _mm512_loadu_pd(dst+j+16)));
+            _mm512_storeu_pd(dst+j+24, _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j+24), _mm512_loadu_pd(dst+j+24)));
         }
+        for (; j + 7 < len; j += 8)
+            _mm512_storeu_pd(dst+j, _mm512_fnmadd_pd(va,_mm512_loadu_pd(src+j),_mm512_loadu_pd(dst+j)));
         for (; j < len; ++j) dst[j] -= alpha*src[j];
         return;
     } else if constexpr (std::is_same_v<Scalar, float>) {
         const __m512 va = _mm512_set1_ps(alpha);
         Index j = 0;
-        for (; j + 31 < len; j += 32) {
+        for (; j + 63 < len; j += 64) {
             _mm512_storeu_ps(dst+j,    _mm512_fnmadd_ps(va,_mm512_loadu_ps(src+j),    _mm512_loadu_ps(dst+j)));
             _mm512_storeu_ps(dst+j+16, _mm512_fnmadd_ps(va,_mm512_loadu_ps(src+j+16), _mm512_loadu_ps(dst+j+16)));
+            _mm512_storeu_ps(dst+j+32, _mm512_fnmadd_ps(va,_mm512_loadu_ps(src+j+32), _mm512_loadu_ps(dst+j+32)));
+            _mm512_storeu_ps(dst+j+48, _mm512_fnmadd_ps(va,_mm512_loadu_ps(src+j+48), _mm512_loadu_ps(dst+j+48)));
         }
+        for (; j + 15 < len; j += 16)
+            _mm512_storeu_ps(dst+j, _mm512_fnmadd_ps(va,_mm512_loadu_ps(src+j),_mm512_loadu_ps(dst+j)));
         for (; j < len; ++j) dst[j] -= alpha*src[j];
         return;
     }
@@ -238,7 +269,7 @@ void simd_naxpy(Scalar* __restrict__ dst,
         const __m256d va = _mm256_set1_pd(alpha);
         Index j = 0;
         for (; j + 15 < len; j += 16) {
-            __builtin_prefetch(src+j+64, 0, 1);
+            __builtin_prefetch(src+j+64,  0, 1);
             _mm256_storeu_pd(dst+j,    _mm256_fnmadd_pd(va,_mm256_loadu_pd(src+j),    _mm256_loadu_pd(dst+j)));
             _mm256_storeu_pd(dst+j+4,  _mm256_fnmadd_pd(va,_mm256_loadu_pd(src+j+4),  _mm256_loadu_pd(dst+j+4)));
             _mm256_storeu_pd(dst+j+8,  _mm256_fnmadd_pd(va,_mm256_loadu_pd(src+j+8),  _mm256_loadu_pd(dst+j+8)));
@@ -267,9 +298,9 @@ void simd_naxpy(Scalar* __restrict__ dst,
     for (Index j = 0; j < len; ++j) dst[j] -= alpha*src[j];
 }
 
-//  Multi-row GEMV kernel: computes w[0..nb) += A[row,:] * Y[...]
-//  for a single row, fusing all nb dot products into one pass
-//  over the row — single read of qrow instead of nb separate reads
+// fused_row_dot: for each panel row r, w[j] += Q[i,row0+r] * Y[r,j].
+// Y is col-major: Y[r,j] = Y_col[j*panel_rows + r].
+// nb <= QR_BLOCK=64, so w[] stays in L1/registers.
 template<typename Scalar>
 [[gnu::always_inline]] inline
 void fused_row_dot(const Scalar* __restrict__ row,
@@ -277,33 +308,10 @@ void fused_row_dot(const Scalar* __restrict__ row,
                    Scalar* __restrict__       w,
                    Index panel_rows, Index nb) noexcept
 {
-    // w[j] += dot(row[0..panel_rows), Y_col[:,j])
-    // Y_col[:,j] = Y_col + j*panel_rows  (contiguous, length panel_rows)
-    // Fused: one pass over 'row', accumulate into all w[j] simultaneously
-    // This avoids re-reading 'row' nb times.
-
-    // For small nb (<64) unrolling by 4 in j dimension is effective.
-    const Index nb4 = nb & ~Index{3};
-    Index r = 0;
-
-#if defined(__AVX512F__)
-    if constexpr (std::is_same_v<Scalar, double>) {
-        for (; r + 7 < panel_rows; r += 8) {
-            __m512d rr = _mm512_loadu_pd(row + r);
-            for (Index j = 0; j < nb4; j += 4) {
-                w[j]   += _mm512_reduce_add_pd(_mm512_mul_pd(rr, _mm512_loadu_pd(Y_col + j*panel_rows + r)));
-                w[j+1] += _mm512_reduce_add_pd(_mm512_mul_pd(rr, _mm512_loadu_pd(Y_col + (j+1)*panel_rows + r)));
-                w[j+2] += _mm512_reduce_add_pd(_mm512_mul_pd(rr, _mm512_loadu_pd(Y_col + (j+2)*panel_rows + r)));
-                w[j+3] += _mm512_reduce_add_pd(_mm512_mul_pd(rr, _mm512_loadu_pd(Y_col + (j+3)*panel_rows + r)));
-            }
-            for (Index j = nb4; j < nb; ++j)
-                w[j] += _mm512_reduce_add_pd(_mm512_mul_pd(rr, _mm512_loadu_pd(Y_col + j*panel_rows + r)));
-        }
-    }
-#endif
-    for (; r < panel_rows; ++r) {
+    for (Index r = 0; r < panel_rows; ++r) {
         const Scalar rv = row[r];
         if (rv == Scalar{0}) continue;
+        #pragma omp simd
         for (Index j = 0; j < nb; ++j)
             w[j] += rv * Y_col[j * panel_rows + r];
     }
@@ -365,58 +373,63 @@ static void apply_block_reflector(
     Scalar* __restrict__ Adata = A.data();
     const Index lda = n;
 
+    const bool do_par = (nrows >= OMP_ROWS_THRESHOLD)
+                     && (nrows * ncols >= OMP_WORK_THRESHOLD);
+
     std::fill(W_buf, W_buf + nb * ncols, Scalar{0});
 
     // Step 1: W = Y^T * A_sub
-    // Split rows across threads; each thread accumulates into private W,
-    // then we reduce. Avoids false sharing on shared W_buf.
     #ifdef _OPENMP
-    #pragma omp parallel if(nrows * ncols > 8192)
-    {
-        const int tid  = omp_get_thread_num();
-        const int nthr = omp_get_num_threads();
-        Scalar* tw = thread_W_base + tid * nb * max_dim;
-        std::fill(tw, tw + nb * ncols, Scalar{0});
+    if (do_par) {
+        #pragma omp parallel num_threads(n == 256 ? 2 : 8)
+        {
+            const int tid  = omp_get_thread_num();
+            const int nthr = omp_get_num_threads();
+            Scalar* tw = thread_W_base + static_cast<std::size_t>(tid) * nb * max_dim;
+            std::fill(tw, tw + nb * ncols, Scalar{0});
 
-        #pragma omp for schedule(static) nowait
-        for (Index r = 0; r < nrows; ++r) {
-            const Scalar* __restrict__ arow = Adata + (row0 + r) * lda + col0;
-            for (Index i = 0; i < nb; ++i) {
-                const Scalar yir = Y_col[r + i * panel_rows];
-                if (yir == Scalar{0}) continue;
-                simd_axpy(tw + i * ncols, arow, yir, ncols);
+            #pragma omp for schedule(static) nowait
+            for (Index r = 0; r < nrows; ++r) {
+                const Scalar* __restrict__ arow = Adata + (row0 + r) * lda + col0;
+                for (Index i = 0; i < nb; ++i) {
+                    const Scalar yir = Y_col[r + i * panel_rows];
+                    if (yir == Scalar{0}) continue;
+                    simd_axpy(tw + i * ncols, arow, yir, ncols);
+                }
             }
-        }
 
-        // Reduce: split W columns among threads to avoid false sharing
-        const Index cols_per = (ncols + nthr - 1) / nthr;
-        const Index c0 = tid * cols_per;
-        const Index c1 = std::min(c0 + cols_per, ncols);
+            // --- FIX: guard c0 < ncols before computing range ---
+            const Index cols_per = (ncols + nthr - 1) / nthr;
+            const Index c0 = std::min(static_cast<Index>(tid) * cols_per, ncols);
+            const Index c1 = std::min(c0 + cols_per, ncols);
+            const Index clen = c1 - c0;  // always >= 0
 
-        #pragma omp barrier
+            #pragma omp barrier
 
-        for (int t = 0; t < nthr; ++t) {
-            const Scalar* src = thread_W_base + t * nb * max_dim;
-            for (Index i = 0; i < nb; ++i) {
-                for (Index j = c0; j < c1; ++j)
-                    W_buf[i * ncols + j] += src[i * ncols + j];
+            if (clen > 0) {
+                for (int t = 0; t < nthr; ++t) {
+                    const Scalar* src = thread_W_base + static_cast<std::size_t>(t) * nb * max_dim;
+                    for (Index i = 0; i < nb; ++i)
+                        simd_axpy(W_buf + i * ncols + c0, src + i * ncols + c0, Scalar{1}, clen);
+                }
             }
+            #pragma omp barrier
         }
-        #pragma omp barrier
-    }
-    #else
-    for (Index i = 0; i < nb; ++i) {
-        const Scalar* __restrict__ yi = Y_col + i * panel_rows;
-        Scalar* __restrict__       wi = W_buf + i * ncols;
-        for (Index r = 0; r < nrows; ++r) {
-            const Scalar yir = yi[r];
-            if (yir == Scalar{0}) continue;
-            simd_axpy(wi, Adata + (row0 + r) * lda + col0, yir, ncols);
-        }
-    }
+    } else
     #endif
+    {
+        for (Index i = 0; i < nb; ++i) {
+            const Scalar* __restrict__ yi = Y_col + i * panel_rows;
+            Scalar* __restrict__       wi = W_buf + i * ncols;
+            for (Index r = 0; r < nrows; ++r) {
+                const Scalar yir = yi[r];
+                if (yir == Scalar{0}) continue;
+                simd_axpy(wi, Adata + (row0 + r) * lda + col0, yir, ncols);
+            }
+        }
+    }
 
-    // Step 2: W <- T^T * W  (serial, nb×nb tiny)
+    // Step 2: W <- T^T * W  (serial, nb×nb <= 64×64)
     for (Index i = nb; i-- > 0;) {
         Scalar* __restrict__ wi = W_buf + i * ncols;
         const Scalar Tii = T_data[i + i * nb];
@@ -428,9 +441,9 @@ static void apply_block_reflector(
         }
     }
 
-    // Step 3: A_sub -= Y * W  (parallel over rows)
+    // Step 3: A_sub -= Y * W
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) if(nrows * ncols > 4096)
+    #pragma omp parallel for schedule(static) if(do_par)
     #endif
     for (Index r = 0; r < nrows; ++r) {
         Scalar* __restrict__ arow = Adata + (row0 + r) * lda + col0;
@@ -453,10 +466,6 @@ static void apply_block_reflector_right(
     Index row0,
     Scalar* __restrict__ W_buf) noexcept
 {
-    // Q <- Q - (Q*Y) * T^T * Y^T
-    // W[i,:] = Q[i, row0:row0+panel_rows] * Y  (m × nb)
-    // Fused: single pass over each Q-row to compute all nb dot products.
-
     const Index m   = Q.rows();
     const Index lda = m;
 
@@ -464,38 +473,30 @@ static void apply_block_reflector_right(
 
     Scalar* __restrict__ Qdata = Q.data();
 
-    // Step 1: W = Q[:,row0:] * Y  — fused, one pass per Q-row
+    const bool do_par = (m >= OMP_ROWS_THRESHOLD)
+                     && (m * panel_rows >= OMP_WORK_THRESHOLD);
+
+    // Steps 1+2+3 fused per Q-row — each row fully independent
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) if(m * panel_rows > 2048)
+    #pragma omp parallel for schedule(static) if(do_par)
     #endif
     for (Index i = 0; i < m; ++i) {
-        const Scalar* __restrict__ qrow = Qdata + i * lda + row0;
-        Scalar*       __restrict__ wrow = W_buf + i * nb;
+        Scalar* __restrict__ qrow = Qdata + i * lda + row0;
+        Scalar* __restrict__ wrow = W_buf  + i * nb;
+
+        // Step 1: w = Q[i, row0:] * Y  (fused single pass)
         for (Index j = 0; j < nb; ++j) wrow[j] = Scalar{0};
         fused_row_dot(qrow, Y_col, wrow, panel_rows, nb);
-    }
 
-    // Step 2: W <- W * T^T  (each row independent, parallel)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) if(m > 256)
-    #endif
-    for (Index i = 0; i < m; ++i) {
-        Scalar* __restrict__ wrow = W_buf + i * nb;
+        // Step 2: w <- w * T^T  (nb×nb upper triangular, in-place per row)
         for (Index j = nb; j-- > 0;) {
             Scalar s = T_data[j + j * nb] * wrow[j];
             for (Index l = 0; l < j; ++l)
                 s += T_data[l + j * nb] * wrow[l];
             wrow[j] = s;
         }
-    }
 
-    // Step 3: Q[i, row0:] -= W[i,:] * Y^T  (parallel over rows)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) if(m * panel_rows > 2048)
-    #endif
-    for (Index i = 0; i < m; ++i) {
-        Scalar*       __restrict__ qrow = Qdata + i * lda + row0;
-        const Scalar* __restrict__ wrow = W_buf + i * nb;
+        // Step 3: Q[i, row0:] -= w * Y^T
         for (Index j = 0; j < nb; ++j) {
             const Scalar wij = wrow[j];
             if (wij == Scalar{0}) continue;
@@ -558,11 +559,13 @@ static void panel_qr_step(
         for (Index i = 1; i < len; ++i) yj[j + i] = v_buf[i];
 
         {
-            Scalar vtx{0};
+            // v^T * R[:,col] — column has stride n (row-major), copy to contiguous tmp
+            Scalar* col_tmp = v_buf;
+            for (Index i = 0; i < len; ++i) col_tmp[i] = Rdata[(col+i)*n + col];
+            const Scalar vtx = simd_dot(v_buf, col_tmp, len);
+            const Scalar tau_vtx = tau_j * vtx;
             for (Index i = 0; i < len; ++i)
-                vtx += v_buf[i] * Rdata[(col+i)*n + col];
-            for (Index i = 0; i < len; ++i)
-                Rdata[(col+i)*n + col] -= tau_j * v_buf[i] * vtx;
+                Rdata[(col+i)*n + col] -= tau_vtx * v_buf[i];
         }
         for (Index i = 1; i < len; ++i) Rdata[(col+i)*n + col] = Scalar{0};
 
@@ -571,7 +574,7 @@ static void panel_qr_step(
         const Index trail_width = trail_end - trail_start;
         if (trail_width <= 0) continue;
 
-        Scalar w[QR_BLOCK] = {};
+        Scalar* w = v_buf;
         for (Index i = 0; i < len; ++i) {
             const Scalar vi = v_buf[i];
             if (vi == Scalar{0}) continue;
