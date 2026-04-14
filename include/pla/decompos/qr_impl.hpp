@@ -47,18 +47,20 @@ using AlignedVec = std::vector<Scalar, AlignedAllocator<Scalar, 64>>;
 
 // OMP parallel region spawn costs ~5-15 µs on typical Linux.
 // Only worth it when work > ~50K doubles of FMA.
-static constexpr Index OMP_ROWS_THRESHOLD  = 96;    // min rows to parallelise
-static constexpr Index OMP_WORK_THRESHOLD  = 16384; // min rows*cols to parallelise
+static constexpr Index OMP_ROWS_THRESHOLD  = 96;
+static constexpr Index OMP_WORK_THRESHOLD  = 16384;
 static constexpr Index QR_BLOCK            = 64;
 
 template<typename Scalar>
 struct QRWorkspace {
-    AlignedVec<Scalar> Y_col;
+    AlignedVec<Scalar> Y_col;    // col-major Y, shape [panel_rows × block]
+    AlignedVec<Scalar> Y_tr;     // row-major transpose of Y: Y_tr[r*nb+j] = Y_col[j*pr+r]
     AlignedVec<Scalar> taus;
     AlignedVec<Scalar> W;
     AlignedVec<Scalar> W_Q;
     AlignedVec<Scalar> T_mat;
     AlignedVec<Scalar> v_buf;
+    AlignedVec<Scalar> col_tmp;
     AlignedVec<Scalar> thread_W;
     int nthreads{1};
 
@@ -67,20 +69,19 @@ struct QRWorkspace {
         nthreads = omp_get_max_threads();
 #endif
         const Index max_dim = std::max(m, n);
-        Y_col.assign   (static_cast<std::size_t>(m * block),                    Scalar{0});
-        taus.assign    (static_cast<std::size_t>(block),                        Scalar{0});
-        W.assign       (static_cast<std::size_t>(block * max_dim),              Scalar{0});
-        W_Q.assign     (static_cast<std::size_t>(m * block),                    Scalar{0});
-        T_mat.assign   (static_cast<std::size_t>(block * block),                Scalar{0});
-        v_buf.assign   (static_cast<std::size_t>(m),                            Scalar{0});
-        thread_W.assign(static_cast<std::size_t>(nthreads * block * max_dim),   Scalar{0});
+        Y_col.assign   (static_cast<std::size_t>(m * block),                  Scalar{0});
+        Y_tr.assign    (static_cast<std::size_t>(m * block),                  Scalar{0});
+        taus.assign    (static_cast<std::size_t>(block),                      Scalar{0});
+        W.assign       (static_cast<std::size_t>(block * max_dim),            Scalar{0});
+        W_Q.assign     (static_cast<std::size_t>(m * block),                  Scalar{0});
+        T_mat.assign   (static_cast<std::size_t>(block * block),              Scalar{0});
+        v_buf.assign   (static_cast<std::size_t>(m),                          Scalar{0});
+        col_tmp.assign (static_cast<std::size_t>(m),                          Scalar{0});
+        thread_W.assign(static_cast<std::size_t>(nthreads * block * max_dim), Scalar{0});
     }
 };
 
-// ---------------------------------------------------------------
-//  SIMD dot — AVX-512 with proper horizontal reduction at end,
-//  NOT inside the loop (avoid _mm512_reduce_add_pd per iteration)
-// ---------------------------------------------------------------
+//  SIMD primitives
 template<typename Scalar>
 [[gnu::always_inline]] inline
 Scalar simd_dot(const Scalar* __restrict__ x,
@@ -298,46 +299,33 @@ void simd_naxpy(Scalar* __restrict__ dst,
     for (Index j = 0; j < len; ++j) dst[j] -= alpha*src[j];
 }
 
-// fused_row_dot: w[j] += dot(row[0..pr), Y[:,j]) for ALL j in one pass over row.
-// Y_col is col-major: Y[:,j] = Y_col + j*panel_rows  (contiguous, length panel_rows).
-// Y_tr  is row-major transposed copy: Y_tr[j*panel_rows + r] = Y_col[j*panel_rows + r]
-//   → same data, but when we iterate j in inner loop, Y_tr[j*panel_rows + r] for
-//     fixed r is stride panel_rows (non-sequential). So we keep the outer-r / inner-j
-//     structure and rely on compiler SIMD on the j loop (nb≤64 fits in registers).
-// With -O3 -march=native the #pragma omp simd on j is auto-vectorised to 8 zmm FMAs.
 template<typename Scalar>
 [[gnu::always_inline]] inline
 void fused_row_dot(const Scalar* __restrict__ row,
-                   const Scalar* __restrict__ Y_col,
+                   const Scalar* __restrict__ Y_tr,   // row-major [panel_rows × nb]
                    Scalar* __restrict__       w,
                    Index panel_rows, Index nb) noexcept
 {
-#if defined(__AVX512F__)
-    if constexpr (std::is_same_v<Scalar, double>) {
-        for (Index r = 0; r < panel_rows; ++r) {
-            const Scalar rv = row[r];
-            if (rv == Scalar{0}) continue;
-            const __m512d vrv = _mm512_set1_pd(rv);
-            Index j = 0;
-            for (; j + 7 < nb; j += 8) {
-                // Y_col[j*pr+r] .. Y_col[(j+7)*pr+r] — stride pr, gather or scalar
-                // Use scalar here: nb≤64 so max 8 gathers, cheaper than overhead
-                __m512d yw; double* ywp = reinterpret_cast<double*>(&yw);
-                for (int jj = 0; jj < 8; ++jj) ywp[jj] = Y_col[(j+jj)*panel_rows + r];
-                __m512d wv = _mm512_loadu_pd(w + j);
-                _mm512_storeu_pd(w + j, _mm512_fmadd_pd(vrv, yw, wv));
-            }
-            for (; j < nb; ++j) w[j] += rv * Y_col[j * panel_rows + r];
-        }
-        return;
-    }
-#endif
+    // w[j] += row[r] * Y_tr[r*nb + j]  for all r,j
     for (Index r = 0; r < panel_rows; ++r) {
         const Scalar rv = row[r];
         if (rv == Scalar{0}) continue;
-        #pragma omp simd
-        for (Index j = 0; j < nb; ++j)
-            w[j] += rv * Y_col[j * panel_rows + r];
+        const Scalar* __restrict__ yrow = Y_tr + r * nb;
+        simd_axpy(w, yrow, rv, nb);
+    }
+}
+
+//  build_Y_transpose: Y_col[j*pr+r] -> Y_tr[r*nb+j]
+template<typename Scalar>
+[[gnu::always_inline]] inline
+void build_Y_transpose(const Scalar* __restrict__ Y_col,
+                       Scalar* __restrict__       Y_tr,
+                       Index panel_rows, Index nb) noexcept
+{
+    for (Index j = 0; j < nb; ++j) {
+        const Scalar* __restrict__ ycol = Y_col + j * panel_rows;
+        for (Index r = 0; r < panel_rows; ++r)
+            Y_tr[r * nb + j] = ycol[r];
     }
 }
 
@@ -444,10 +432,6 @@ static void apply_block_reflector(
     } else
     #endif
     {
-        // Serial path — parallelise Step 1 over rows of A (nrows independent outputs
-        // would race on wi, so instead: parallel over i with each thread owning wi)
-        // Actually rows of A are read-only in Step1; wi = W_buf+i*ncols are distinct.
-        // Safe to parallelise over i because each i writes its own wi row of W_buf.
         #ifdef _OPENMP
         #pragma omp parallel for schedule(static) if(nrows * ncols >= 4096)
         #endif
@@ -462,16 +446,39 @@ static void apply_block_reflector(
         }
     }
 
-    // Step 2: W <- T^T * W  (serial dependency chain between i, nb×nb tiny)
-    for (Index i = nb; i-- > 0;) {
-        Scalar* __restrict__ wi = W_buf + i * ncols;
-        const Scalar Tii = T_data[i + i * nb];
-        #pragma omp simd
-        for (Index j = 0; j < ncols; ++j) wi[j] *= Tii;
-        for (Index l = 0; l < i; ++l) {
-            const Scalar Tli = T_data[l + i * nb];
-            if (Tli == Scalar{0}) continue;
-            simd_axpy(wi, W_buf + l * ncols, Tli, ncols);
+    // Step 2: W <- T^T * W  (upper-triangular nb×nb apply to nb rows of W)
+    #ifdef _OPENMP
+    if (do_par && ncols >= 256) {
+        #pragma omp parallel for schedule(static)
+        for (Index c = 0; c < ncols; c += 64) {
+            const Index cend = std::min(c + Index{64}, ncols);
+            const Index clen = cend - c;
+            // Apply upper-triangular T^T to column slice W[:, c:cend]
+            for (Index i = nb; i-- > 0;) {
+                Scalar* __restrict__ wi = W_buf + i * ncols + c;
+                const Scalar Tii = T_data[i + i * nb];
+                simd_axpy(wi, wi, Tii - Scalar{1}, clen);
+                for (Index jj = 0; jj < clen; ++jj) wi[jj] *= Tii;
+                for (Index l = 0; l < i; ++l) {
+                    const Scalar Tli = T_data[l + i * nb];
+                    if (Tli == Scalar{0}) continue;
+                    simd_axpy(wi, W_buf + l * ncols + c, Tli, clen);
+                }
+            }
+        }
+    } else
+    #endif
+    {
+        for (Index i = nb; i-- > 0;) {
+            Scalar* __restrict__ wi = W_buf + i * ncols;
+            const Scalar Tii = T_data[i + i * nb];
+            #pragma omp simd
+            for (Index j = 0; j < ncols; ++j) wi[j] *= Tii;
+            for (Index l = 0; l < i; ++l) {
+                const Scalar Tli = T_data[l + i * nb];
+                if (Tli == Scalar{0}) continue;
+                simd_axpy(wi, W_buf + l * ncols, Tli, ncols);
+            }
         }
     }
 
@@ -494,6 +501,7 @@ template<typename Scalar>
 static void apply_block_reflector_right(
     Matrix<Scalar>& Q,
     const Scalar* __restrict__ Y_col,
+    const Scalar* __restrict__ Y_tr,
     const Scalar* __restrict__ T_data,
     Index panel_rows,
     Index nb,
@@ -501,7 +509,7 @@ static void apply_block_reflector_right(
     Scalar* __restrict__ W_buf) noexcept
 {
     const Index m   = Q.rows();
-    const Index lda = m;
+    const Index lda = Q.cols();
 
     if (panel_rows <= 0 || nb == 0) return;
 
@@ -510,17 +518,17 @@ static void apply_block_reflector_right(
     const bool do_par = (m >= OMP_ROWS_THRESHOLD)
                      && (m * panel_rows >= OMP_WORK_THRESHOLD);
 
-    // Step 1 + 2 + 3 fused per Q-row — each row fully independent
+    // Steps 1+2+3 fused per Q-row — each row fully independent
     #ifdef _OPENMP
     #pragma omp parallel for schedule(static) if(do_par)
     #endif
     for (Index i = 0; i < m; ++i) {
-        Scalar* __restrict__ qrow = Qdata + i * lda + row0;  // non-const: Step 3 writes here
-        Scalar* __restrict__ wrow = W_buf + i * nb;
+        Scalar* __restrict__ qrow = Qdata + i * lda + row0;
+        Scalar* __restrict__ wrow = W_buf  + i * nb;
 
-        // Step 1: w = Q[i, row0:] * Y  (fused single pass)
+        // Step 1: w = Q[i, row0:] * Y  (fused, contiguous via Y_tr)
         for (Index j = 0; j < nb; ++j) wrow[j] = Scalar{0};
-        fused_row_dot(qrow, Y_col, wrow, panel_rows, nb);
+        fused_row_dot(qrow, Y_tr, wrow, panel_rows, nb);
 
         // Step 2: w <- w * T^T  (nb×nb upper triangular, in-place per row)
         for (Index j = nb; j-- > 0;) {
@@ -548,7 +556,8 @@ static void panel_qr_step(
     Index nb,
     Scalar* __restrict__ Y_col,
     Scalar* __restrict__ taus,
-    Scalar* __restrict__ v_buf) noexcept
+    Scalar* __restrict__ v_buf,
+    Scalar* __restrict__ col_tmp) noexcept
 {
     const Index m          = R.rows();
     const Index n          = R.cols();
@@ -564,12 +573,15 @@ static void panel_qr_step(
         Scalar tau_j{0};
         {
             const Scalar* src = Rdata + col * n + col;
+            for (Index i = 0; i < len; ++i) col_tmp[i] = src[i * n];
+
             Scalar sigma{0};
+            #pragma omp simd reduction(+:sigma)
             for (Index i = 1; i < len; ++i) {
-                v_buf[i] = src[i * n];
-                sigma   += v_buf[i] * v_buf[i];
+                v_buf[i] = col_tmp[i];
+                sigma   += col_tmp[i] * col_tmp[i];
             }
-            const Scalar x0 = src[0];
+            const Scalar x0 = col_tmp[0];
             v_buf[0] = x0;
 
             if (sigma == Scalar{0} && x0 >= Scalar{0}) {
@@ -594,12 +606,10 @@ static void panel_qr_step(
         for (Index i = 1; i < len; ++i) yj[j + i] = v_buf[i];
 
         {
-            Scalar vtx{0};
-            #pragma omp simd reduction(+:vtx)
-            for (Index i = 0; i < len; ++i)
-                vtx += v_buf[i] * Rdata[(col+i)*n + col];
+            // OPT-2: col_tmp already holds R[:,col] contiguously — use simd_dot
+            const Scalar vtx     = simd_dot(v_buf, col_tmp, len);
             const Scalar tau_vtx = tau_j * vtx;
-            #pragma omp simd
+            // Write back to strided column
             for (Index i = 0; i < len; ++i)
                 Rdata[(col+i)*n + col] -= tau_vtx * v_buf[i];
         }
@@ -648,28 +658,34 @@ QRResult<Scalar> qr_householder(const Matrix<Scalar>& input) {
         const Index panel_rows = m - k;
 
         Scalar* Y_col    = ws.Y_col.data();
+        Scalar* Y_tr     = ws.Y_tr.data();
         Scalar* taus     = ws.taus.data();
         Scalar* T_data   = ws.T_mat.data();
         Scalar* W_buf    = ws.W.data();
         Scalar* W_Q      = ws.W_Q.data();
         Scalar* v_buf    = ws.v_buf.data();
+        Scalar* col_tmp  = ws.col_tmp.data();
         Scalar* thread_W = ws.thread_W.data();
 
         std::fill(Y_col,  Y_col  + panel_rows * nb, Scalar{0});
         std::fill(taus,   taus   + nb,               Scalar{0});
         std::fill(T_data, T_data + nb * nb,           Scalar{0});
 
-        panel_qr_step(R, k, nb, Y_col, taus, v_buf);
+        panel_qr_step(R, k, nb, Y_col, taus, v_buf, col_tmp);
         build_T_matrix(Y_col, panel_rows, nb, taus, T_data);
+
+        build_Y_transpose(Y_col, Y_tr, panel_rows, nb);
 
         if (k + nb < n)
             apply_block_reflector(R, Y_col, T_data, panel_rows, nb, k, k+nb,
                                   W_buf, thread_W, ws.nthreads, max_dim);
 
-        apply_block_reflector_right(Q, Y_col, T_data, panel_rows, nb, k, W_Q);
+        apply_block_reflector_right(Q, Y_col, Y_tr, T_data, panel_rows, nb, k, W_Q);
     }
 
+    #ifdef _OPENMP
     #pragma omp parallel for schedule(static) if(m * n > 32768)
+    #endif
     for (Index i = 1; i < m; ++i) {
         const Index jend = std::min(i, n);
         Scalar* row = R.data() + i * n;
