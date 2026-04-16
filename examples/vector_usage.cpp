@@ -4,31 +4,35 @@
 int main() {
     using pla::Vector;
 
-    Vector<double> a{1.0, 2.0, 3.0};
-    Vector<double> b{4.0, 5.0, 6.0};
+    { // VECTOR
 
-    std::cout << "a[0] = " << a[0] << "\n";
+        Vector<double> a{1.0, 2.0, 3.0};
+        Vector<double> b{4.0, 5.0, 6.0};
 
-    auto c = a + b;
-    auto d = a - b;
-    auto e = a * 2.0;
+        std::cout << "a[0] = " << a[0] << "\n";
 
-    std::cout << "a + b = " << c << "\n";
-    std::cout << "a - b = " << d << "\n";
-    std::cout << "a * 2 = " << e << "\n";
+        auto c = a + b;
+        auto d = a - b;
+        auto e = a * 2.0;
 
-    double dot = a.dot(b);
-    std::cout << "a · b = " << dot << "\n";
+        std::cout << "a + b = " << c << "\n";
+        std::cout << "a - b = " << d << "\n";
+        std::cout << "a * 2 = " << e << "\n";
 
-    std::cout << "||a|| = " << a.norm() << "\n";
+        double dot = a.dot(b);
+        std::cout << "a · b = " << dot << "\n";
 
-    auto unit = a.normalized();
-    std::cout << "normalized a = " << unit << "\n";
+        std::cout << "||a|| = " << a.norm() << "\n";
 
-    a += b;
-    std::cout << "a += b → " << a << "\n";
+        auto unit = a.normalized();
+        std::cout << "normalized a = " << unit << "\n";
 
-    std::cout << "is unit: " << unit.is_unit() << "\n";
+        a += b;
+        std::cout << "a += b → " << a << "\n";
+
+        std::cout << "is unit: " << unit.is_unit() << "\n";
+    
+    }
 
     return 0;
 }
