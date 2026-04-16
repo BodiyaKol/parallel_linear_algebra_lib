@@ -49,3 +49,7 @@ data/
 .vscode/
 .PVS-Studio/
 cmake-build-*/
+.venv/ 
+build/ 
+__pycache__/ 
+"*.pyc" 
