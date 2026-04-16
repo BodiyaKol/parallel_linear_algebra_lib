@@ -5,33 +5,23 @@ project(parallel_linear_algebra_lib
         LANGUAGES CXX
 )
 
-# --------------------------------------------------
-# Options
-# --------------------------------------------------
-option(USE_OPENMP      "Enable OpenMP parallelism"           ON)
-option(PLA_NATIVE_ARCH "Enable native CPU optimizations"     ON)
-option(PLA_BUILD_TESTS "Build tests"                         ON)
 
-# --------------------------------------------------
-# C++ standard
-# --------------------------------------------------
+option(USE_OPENMP      "Enable OpenMP parallelism"         ON)
+option(PLA_NATIVE_ARCH "Enable native CPU optimizations"   ON)
+option(PLA_BUILD_TESTS "Build tests"                       ON)
+
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)   # use -std=c++23, not -std=gnu++23
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 
-# --------------------------------------------------
-# Dependencies
-# --------------------------------------------------
 find_package(Eigen3 REQUIRED)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# --------------------------------------------------
-# Library target
-# --------------------------------------------------
 add_library(pla INTERFACE)
 add_library(pla::pla ALIAS pla)
 
@@ -44,12 +34,8 @@ target_compile_features(pla INTERFACE cxx_std_23)
 
 target_link_libraries(pla INTERFACE Eigen3::Eigen)
 
-# --------------------------------------------------
-# Architecture flags
-# Only applied when PLA_NATIVE_ARCH=ON.
-# Wrapped in SHELL: so multiple flags are treated as
-# one group and not deduplicated by CMake.
-# --------------------------------------------------
+
+
 if(PLA_NATIVE_ARCH)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
         target_compile_options(pla INTERFACE
@@ -65,15 +51,11 @@ if(PLA_NATIVE_ARCH)
                 $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-mcpu=native>
         )
     endif()
-    # MSVC — auto-vectorisation is always on, user can add /arch:AVX2 manually
 endif()
 
-# --------------------------------------------------
-# OpenMP
-# --------------------------------------------------
+
 if(USE_OPENMP)
     if(APPLE)
-        # Apple Clang ships without OpenMP — need Homebrew libomp
         find_program(BREW_EXECUTABLE brew)
         if(NOT BREW_EXECUTABLE)
             message(FATAL_ERROR
@@ -116,9 +98,8 @@ if(USE_OPENMP)
     endif()
 endif()
 
-# --------------------------------------------------
-# Install rules
-# --------------------------------------------------
+
+
 install(TARGETS pla
         EXPORT plaTargets
 )
@@ -133,9 +114,7 @@ install(EXPORT plaTargets
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pla
 )
 
-# --------------------------------------------------
-# Config files
-# --------------------------------------------------
+
 configure_package_config_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/plaConfig.cmake.in
         ${CMAKE_CURRENT_BINARY_DIR}/plaConfig.cmake
