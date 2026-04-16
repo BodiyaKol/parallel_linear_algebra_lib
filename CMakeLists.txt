@@ -8,14 +8,16 @@ project(parallel_linear_algebra_lib
 # --------------------------------------------------
 # Options
 # --------------------------------------------------
-option(USE_OPENMP "Enable OpenMP parallelism" ON)
+option(USE_OPENMP      "Enable OpenMP parallelism"           ON)
+option(PLA_NATIVE_ARCH "Enable native CPU optimizations"     ON)
+option(PLA_BUILD_TESTS "Build tests"                         ON)
 
 # --------------------------------------------------
 # C++ standard
 # --------------------------------------------------
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS ON)
+set(CMAKE_CXX_EXTENSIONS OFF)   # use -std=c++23, not -std=gnu++23
 
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 
@@ -44,18 +46,26 @@ target_link_libraries(pla INTERFACE Eigen3::Eigen)
 
 # --------------------------------------------------
 # Architecture flags
+# Only applied when PLA_NATIVE_ARCH=ON.
+# Wrapped in SHELL: so multiple flags are treated as
+# one group and not deduplicated by CMake.
 # --------------------------------------------------
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    target_compile_options(pla INTERFACE
-            -march=native
-            -mtune=native
-            -mavx2
-            -mfma
-    )
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-    target_compile_options(pla INTERFACE
-            -mcpu=native
-    )
+if(PLA_NATIVE_ARCH)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+        target_compile_options(pla INTERFACE
+                $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+                    -march=native
+                    -mtune=native
+                    -mavx2
+                    -mfma
+                >
+        )
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        target_compile_options(pla INTERFACE
+                $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-mcpu=native>
+        )
+    endif()
+    # MSVC — auto-vectorisation is always on, user can add /arch:AVX2 manually
 endif()
 
 # --------------------------------------------------
@@ -63,24 +73,40 @@ endif()
 # --------------------------------------------------
 if(USE_OPENMP)
     if(APPLE)
+        # Apple Clang ships without OpenMP — need Homebrew libomp
+        find_program(BREW_EXECUTABLE brew)
+        if(NOT BREW_EXECUTABLE)
+            message(FATAL_ERROR
+                "Homebrew not found. Install it or set USE_OPENMP=OFF.")
+        endif()
+
         execute_process(
-                COMMAND brew --prefix libomp
+                COMMAND ${BREW_EXECUTABLE} --prefix libomp
                 OUTPUT_VARIABLE LIBOMP_PREFIX
                 OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE BREW_RESULT
         )
 
-        target_compile_options(pla INTERFACE
-                -Xpreprocessor -fopenmp
+        if(NOT BREW_RESULT EQUAL 0 OR NOT LIBOMP_PREFIX)
+            message(FATAL_ERROR
+                "libomp not found via Homebrew. Run: brew install libomp\n"
+                "Or configure with -DUSE_OPENMP=OFF")
+        endif()
+
+        find_library(LIBOMP_LIB
+                NAMES omp
+                HINTS "${LIBOMP_PREFIX}/lib"
+                REQUIRED
+        )
+        find_path(LIBOMP_INCLUDE
+                NAMES omp.h
+                HINTS "${LIBOMP_PREFIX}/include"
+                REQUIRED
         )
 
-        target_include_directories(pla INTERFACE
-                ${LIBOMP_PREFIX}/include
-        )
-
-        target_link_libraries(pla INTERFACE
-                ${LIBOMP_PREFIX}/lib/libomp.dylib
-        )
-
+        target_compile_options(pla INTERFACE -Xpreprocessor -fopenmp)
+        target_include_directories(pla INTERFACE "${LIBOMP_INCLUDE}")
+        target_link_libraries(pla INTERFACE "${LIBOMP_LIB}")
         target_compile_definitions(pla INTERFACE USE_OPENMP _OPENMP)
 
     else()
@@ -102,7 +128,7 @@ install(DIRECTORY include/
 )
 
 install(EXPORT plaTargets
-        FILE plaTargets.cmake
+        FILE      plaTargets.cmake
         NAMESPACE pla::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pla
 )
@@ -118,7 +144,7 @@ configure_package_config_file(
 
 write_basic_package_version_file(
         ${CMAKE_CURRENT_BINARY_DIR}/plaConfigVersion.cmake
-        VERSION ${PROJECT_VERSION}
+        VERSION       ${PROJECT_VERSION}
         COMPATIBILITY SameMajorVersion
 )
 
@@ -129,36 +155,39 @@ install(FILES
 )
 
 # --------------------------------------------------
-# Testing
+# Testing — only when this is the top-level project
+# or PLA_BUILD_TESTS is explicitly ON
 # --------------------------------------------------
-enable_testing()
+if(PROJECT_IS_TOP_LEVEL AND PLA_BUILD_TESTS)
+    enable_testing()
 
-find_package(GTest QUIET)
+    find_package(GTest QUIET)
 
-if(NOT GTest_FOUND)
-    include(FetchContent)
+    if(NOT GTest_FOUND)
+        include(FetchContent)
 
-    FetchContent_Declare(
-            googletest
-            URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-    )
+        FetchContent_Declare(
+                googletest
+                URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+        )
 
-    FetchContent_MakeAvailable(googletest)
+        FetchContent_MakeAvailable(googletest)
+    endif()
+
+    function(register_tests TEST_DIR)
+        file(GLOB_RECURSE TEST_SOURCES "${TEST_DIR}/test_*.cpp")
+
+        foreach(TEST_SOURCE ${TEST_SOURCES})
+            get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+
+            add_executable(${TEST_NAME} ${TEST_SOURCE})
+            target_link_libraries(${TEST_NAME} PRIVATE pla GTest::gtest_main)
+
+            gtest_discover_tests(${TEST_NAME})
+
+            message(STATUS "Registered test: ${TEST_NAME}")
+        endforeach()
+    endfunction()
+
+    register_tests(${CMAKE_CURRENT_SOURCE_DIR}/test)
 endif()
-
-function(register_tests TEST_DIR)
-    file(GLOB_RECURSE TEST_SOURCES "${TEST_DIR}/test_*.cpp")
-
-    foreach(TEST_SOURCE ${TEST_SOURCES})
-        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-
-        add_executable(${TEST_NAME} ${TEST_SOURCE})
-        target_link_libraries(${TEST_NAME} PRIVATE pla GTest::gtest_main)
-
-        gtest_discover_tests(${TEST_NAME})
-
-        message(STATUS "Registered test: ${TEST_NAME}")
-    endforeach()
-endfunction()
-
-register_tests(${CMAKE_CURRENT_SOURCE_DIR}/test)
