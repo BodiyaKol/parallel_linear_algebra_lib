@@ -8,7 +8,7 @@
 #include <array>
 #include <atomic>
 
-#include "pla.h"
+#include "pla/pla.h"
 
 using namespace std::chrono;
 

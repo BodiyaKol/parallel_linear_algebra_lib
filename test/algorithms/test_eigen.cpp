@@ -5,7 +5,7 @@
 #include <vector>
 #include <cmath>
 
-#include "pla.h"
+#include "pla/pla.h"
 
 namespace {
 

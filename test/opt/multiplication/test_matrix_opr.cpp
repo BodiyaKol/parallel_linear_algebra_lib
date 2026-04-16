@@ -8,7 +8,7 @@
 #include <sstream>
 #include <type_traits>
 
-#include "pla.h"
+#include "pla/pla.h"
 
 
 template<typename T>

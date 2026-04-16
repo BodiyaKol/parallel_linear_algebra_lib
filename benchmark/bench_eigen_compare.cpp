@@ -8,7 +8,7 @@
 #include <random>
 #include <vector>
 
-#include "pla.h"
+#include "pla/pla.h"
 
 using Clock = std::chrono::high_resolution_clock;
 

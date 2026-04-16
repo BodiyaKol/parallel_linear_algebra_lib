@@ -5,7 +5,7 @@
 #include <iostream>
 #include <vector>
 
-#include "pla.h"
+#include "pla/pla.h"
 
 static void fill_random_pla(pla::Matrix<>& M, std::mt19937& rng,
                              std::uniform_real_distribution<double>& dist) {

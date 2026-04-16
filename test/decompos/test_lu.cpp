@@ -5,7 +5,7 @@
 #include <iostream>
 #include <vector>
 
-#include "pla.h"
+#include "pla/pla.h"
 
 using namespace std::chrono;
 
