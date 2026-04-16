@@ -1,432 +1,480 @@
-# Організація репозиторію parallel_linear_algebra_lib
+# PLA — Parallel Linear Algebra Library
 
-## Загальна структура
-
-```
-parallel_linear_algebra_lib/
-├── include/              # Публічні заголовки API
-├── src/                  # Реалізація
-├── test/                 # Тести
-├── examples/             # Приклади використання
-├── CMakeLists.txt        # Конфігурація збірки
-├── README.md             # Опис проекту
-└── LICENSE               # Ліцензія
-```
+Header-only C++20 library for dense linear algebra with performance comparable to Eigen.  
+Single include: `#include "pla/pla.h"`
 
 ---
 
-## 📁 `include/` - Публічні заголовки
+## Table of Contents
 
-Заголовки, які бачить користувач бібліотеки. Тільки оголошення класів, методів та функцій.
-
-### `include/main_api.h`
-**Призначення**: Єдиний файл для підключення всієї бібліотеки користувачем.  
-**Використання**: `#include "main_api.h"`  
-**Що робить**: Агрегує всі підзаголовки з `types/`, `blas1/`, `blas2/`, `blas3/`, `linalg_algorithms/`.
+- [Types & Concepts](#types--concepts)
+- [Vector\<Scalar\>](#vectorscalar)
+- [Matrix\<Scalar\>](#matrixscalar)
+- [Decompositions](#decompositions)
+- [Algorithms](#algorithms)
+- [Execution Policy](#execution-policy)
+- [Error Handling](#error-handling)
+- [Quick Examples](#quick-examples)
 
 ---
 
-### 📂 `include/types/` - Базові типи
+## Types & Concepts
 
-Основні типи даних бібліотеки. Цю частину API реалізує студент.
-
-#### `types.h`
-Агрегатор всіх типів. Включає всі інші заголовки з `types/`.
-
-#### `scalar.h`
-```cpp
-using Scalar = double;
-```
-Базовий числовий тип для всіх обчислень.
-
-#### `index.h`
 ```cpp
 using Index = std::size_t;
-```
-Тип для індексів та розмірів масивів.
 
-#### `vector.h` ⭐
-**Клас `Vector`** - математичний вектор з лінійної алгебри.
+template<typename Scalar>
+concept Numeric = std::is_arithmetic_v<Scalar>;  // int, float, double, …
 
-**Основні оператори**:
-- `operator+`, `operator-`, `operator*`, `operator/` - арифметика
-- `operator+=`, `operator-=`, `operator*=`, `operator/=` - складені оператори
-
-**Методи**:
-- `dimension()` - розмірність вектора (належність до $ \mathbb{R}^n $)
-- `coordinates()` - доступ до масиву координат
-- `dot(const Vector&)` - скалярний добуток
-- `norm()` - Евклідова норма
-- `normalize()` - нормалізація in-place
-- `normalized()` - повертає нормалізовану копію
-- `is_unit()` - перевірка, чи є одиничним
-
-**Конструктори та Rule of 5**:
-- `Vector()` - порожній вектор
-- `Vector(Index n)` - вектор розмірності n
-- `Vector(Index n, Scalar value)` - заповнений значенням
-- `Vector(std::initializer_list<Scalar>)` - з списку `{1.0, 2.0, 3.0}`
-- Копіюючий конструктор (default)
-- Переміщуючий конструктор (default)
-- Копіюючий оператор присвоєння (default)
-- Переміщуючий оператор присвоєння (default)
-- Деструктор (default)
-
-**Приклад**:
-```cpp
-Vector a = {1.0, 2.0, 3.0};
-Vector b = {4.0, 5.0, 6.0};
-Vector c = a + b;              // {5.0, 7.0, 9.0}
-Scalar dot = a.dot(b);         // 32.0
-Scalar norm = a.norm();        // 3.74
-Index dim = a.dimension();     // 3 (вектор у R^3)
-```
-
-#### `matrix.h` ⭐
-**Клас `Matrix`** - математична матриця з лінійної алгебри.
-
-**Основні оператори**:
-- `operator+`, `operator-`, `operator*`, `operator/` - арифметика
-- `operator*(const Vector&)` - множення матриці на вектор (Ax)
-- `operator*(const Matrix&)` - множення матриць (AB)
-- `operator+=`, `operator-=`, `operator*=`, `operator/=` - складені оператори
-
-**Методи**:
-- `rows()`, `cols()` - розміри матриці
-- `data()` - доступ до масиву елементів
-- `transpose()` - транспонування (повертає нову матрицю)
-- `transpose_inplace()` - транспонування на місці
-- `row(Index)` - отримати рядок як `VectorView`
-- `col(Index)` - отримати стовпець як `VectorView`
-- `fill(Scalar)` - заповнити значенням
-- `set_identity()` - зробити одиничною
-- `norm()` - норма Фробеніуса
-- `static identity(Index)` - створити одиничну матрицю
-
-**Конструктори та Rule of 5**:
-- `Matrix()` - порожня матриця
-- `Matrix(Index rows, Index cols)` - заданого розміру
-- `Matrix(Index rows, Index cols, Scalar value)` - заповнена значенням
-- `Matrix(Index rows, Index cols, Scalar value, StorageOrder)` - з вказаним порядком
-- Копіюючий конструктор (default)
-- Переміщуючий конструктор (default)
-- Копіюючий оператор присвоєння (default)
-- Переміщуючий оператор присвоєння (default)
-- Деструктор (default)
-
-**Приклад**:
-```cpp
-Matrix A(2, 3);
-A(0, 0) = 1.0; A(0, 1) = 2.0; A(0, 2) = 3.0;
-A(1, 0) = 4.0; A(1, 1) = 5.0; A(1, 2) = 6.0;
-
-Vector x = {1.0, 2.0, 3.0};
-Vector y = A * x;              // Матриця × Вектор: {14.0, 32.0}
-
-Matrix B = A.transpose();      // Транспонування: 3×2
-Matrix I = Matrix::identity(3); // Одинична матриця 3×3
-```
-
-#### `layout.h`
-```cpp
 enum class StorageOrder { RowMajor, ColMajor };
 ```
-Порядок зберігання елементів матриці в пам'яті:
-- `RowMajor` - по рядках (C-style, за замовчуванням)
-- `ColMajor` - по стовпцях (Fortran-style, для BLAS/LAPACK)
 
-#### `shape.h`
-Структури для опису форми векторів та матриць:
+All templates are constrained with `requires Numeric<Scalar>`.  
+Default scalar type is `double` for both `Vector` and `Matrix`.
+
+### Utility types
+
+| Type | Fields | Purpose |
+|------|--------|---------|
+| `VectorShape` | `n` | Describes vector size |
+| `MatrixShape` | `rows`, `cols` | Describes matrix shape |
+| `VectorView<S>` / `ConstVectorView<S>` | `ptr`, `size`, `stride` | Non-owning view into contiguous data |
+| `MatrixView<S>` / `ConstMatrixView<S>` | `ptr`, `rows`, `cols`, `ld`, `order` | Non-owning view into matrix data |
+| `Status` | `code`, `message` | Return status without exceptions |
+| `StatusCode` | enum | `Ok`, `InvalidArgument`, `SizeMismatch`, `SingularMatrix`, `NonConvergent`, `NotImplemented`, `BackendError` |
+
+---
+
+## Vector\<Scalar\>
+
 ```cpp
-struct VectorShape { Index size; };
-struct MatrixShape { Index rows; Index cols; };
+#include "pla/core/vector.h"  // or pla/pla.h
 ```
 
-#### `status.h`
-Enum та структура для повернення статусів операцій:
+### Construction
+
 ```cpp
-enum class StatusCode { Ok, InvalidSize, SizeMismatch, ... };
-struct Status { StatusCode code; std::string message; };
+Vector<double> v;                      // empty
+Vector<double> v(5);                   // 5 zeros
+Vector<double> v(5, 1.0);             // 5 ones
+Vector<double> v = {1.0, 2.0, 3.0};  // initializer list
 ```
 
-#### `exceptions.h`
-Ієрархія винятків для обробки помилок:
-- `PLAException` - базовий клас
-- `SizeMismatchException` - розміри векторів не співпадають
-- `ShapeMismatchException` - форми матриць несумісні
-- `ZeroVectorException` - нульовий вектор (нормалізація)
-- `NonSquareMatrixException` - потрібна квадратна матриця
-- `IndexOutOfRangeException` - вихід за межі
-- `SingularMatrixException` - сингулярна матриця
-- `InvalidScalarException` - некоректне скалярне значення
-- `AllocationException` - помилка виділення пам'яті
-- `ConvergenceException` - не збіглося в ітеративному алгоритмі
-- `NotImplementedException` - функція не реалізована
+### Element access
 
-#### `view.h`
-Неволодіючі view на дані (zero-copy):
+| Expression | Description |
+|-----------|-------------|
+| `v[i]` | Unchecked access |
+| `v.at(i)` | Bounds-checked access (throws on OOB) |
+| `v.data()` | Raw pointer to underlying storage |
+
+### Properties
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `v.dimension()` | `Index` | Number of elements |
+| `v.empty()` | `bool` | True if dimension is 0 |
+
+### Arithmetic operators
+
 ```cpp
-class VectorView;  // Доступ до частини вектора без копіювання
-class MatrixView;  // Доступ до частини матриці без копіювання
+v + u,  v - u,  -v          // element-wise, returns new Vector
+v * scalar,  v / scalar     // scaling
+scalar * v                  // free function
+v += u,  v -= u,  v *= s,  v /= s   // in-place
 ```
 
-#### `execution_policy.h`
-Налаштування паралелізації:
+### Math methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `v.dot(u)` | `Scalar` | Dot product |
+| `v.norm()` | `Scalar` | L2 norm |
+| `v.norm_squared()` | `Scalar` | Squared L2 norm |
+| `v.normalize()` | `void` | Normalizes in-place |
+| `v.normalized()` | `Vector` | Returns normalized copy |
+| `v.is_unit(tol)` | `bool` | Checks if unit vector (default tol `1e-9`) |
+
+### Utilities
+
 ```cpp
+v.resize(n);   // resize (does not preserve values)
+v.clear();     // reset to empty
+v.swap(u);     // O(1) swap
+swap(v, u);    // free function
+
+std::cout << v;  // operator<< supported
+```
+
+---
+
+## Matrix\<Scalar\>
+
+```cpp
+#include "pla/core/matrix.h"  // or pla/pla.h
+```
+
+Memory is 64-byte aligned for SIMD efficiency.
+
+### Construction
+
+```cpp
+Matrix<double> A;                                   // empty
+Matrix<double> A(3, 4);                             // 3×4 zeros, RowMajor
+Matrix<double> A(3, 4, 1.0);                        // 3×4 filled with 1.0
+Matrix<double> A(3, 4, StorageOrder::ColMajor);     // column-major zeros
+auto I = Matrix<double>::identity(n);               // n×n identity
+```
+
+### Element access
+
+| Expression | Description |
+|-----------|-------------|
+| `A(r, c)` | Unchecked access |
+| `A.at(r, c)` | Bounds-checked access (throws on OOB) |
+| `A.data()` | Raw pointer to storage |
+
+### Properties
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `A.rows()` | `Index` | Row count |
+| `A.cols()` | `Index` | Column count |
+| `A.size()` | `Index` | Total elements (`rows * cols`) |
+| `A.order()` | `StorageOrder` | `RowMajor` or `ColMajor` |
+| `A.is_square()` | `bool` | True if rows == cols |
+
+### Arithmetic operators
+
+```cpp
+A + B,  A - B,  -A           // matrix arithmetic
+A * scalar,  A / scalar      // scaling
+scalar * A                   // free function
+A * v                        // matrix-vector product → Vector
+A * B                        // matrix-matrix product
+A += B,  A -= B,  A *= s,  A /= s   // in-place
+A == B,  A != B              // equality
+```
+
+### Math methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `A.transpose()` | `Matrix` | Returns transposed copy |
+| `A.transpose_inplace()` | `void` | In-place transpose |
+| `A.norm()` | `Scalar` | Frobenius norm |
+| `A.row(r)` | `Vector` | Copy of row `r` |
+| `A.col(c)` | `Vector` | Copy of column `c` |
+
+### Utilities
+
+```cpp
+A.fill(value);    // fill all elements
+A.set_identity(); // make into identity matrix (must be square)
+A.clear();        // reset to 0×0
+A.swap(B);        // O(1) swap
+swap(A, B);       // free function
+
+std::cout << A;   // operator<< supported
+```
+
+---
+
+## Decompositions
+
+### LU
+
+```cpp
+#include "pla/decompos/lu.h"
+```
+
+```cpp
+struct LUResult<Scalar> {
+    Matrix<Scalar> L;          // lower triangular
+    Matrix<Scalar> U;          // upper triangular
+    Matrix<Scalar> LU_packed;  // combined packed form
+    std::vector<Index> perm;   // row permutation
+};
+
+LUResult<double> lu_blocked(const Matrix<double>& A, Index block_size = 32);
+LUResult<double> lu_naive(const Matrix<double>& A);
+```
+
+`lu_blocked` is preferred for large matrices (uses cache-friendly blocking).
+
+---
+
+### QR
+
+```cpp
+#include "pla/decompos/qr.h"
+```
+
+```cpp
+struct QRResult<Scalar> {
+    Matrix<Scalar> Q;  // orthogonal
+    Matrix<Scalar> R;  // upper triangular
+};
+
+QRResult<double> qr(const Matrix<double>& A);               // recommended
+QRResult<double> qr_householder(const Matrix<double>& A);   // explicit Householder
+QRResult<double> qr_givens(const Matrix<double>& A);        // explicit Givens
+```
+
+---
+
+### Hessenberg Reduction
+
+```cpp
+#include "pla/decompos/hessenberg.h"
+```
+
+```cpp
+struct HessenbergOptions<Scalar> {
+    bool accumulate_q = false;   // also compute Q
+    Scalar tolerance = 1e-12;
+};
+
+struct HessenbergResult<Scalar> {
+    Matrix<Scalar> H;   // upper Hessenberg form
+    Matrix<Scalar> Q;   // orthogonal (only if accumulate_q = true)
+    bool has_q;
+};
+
+HessenbergResult<double> hessenberg_reduce(
+    const Matrix<double>& A,
+    const HessenbergOptions<double>& opts = {},
+    HessenbergWorkspace<double>* workspace = nullptr  // optional, avoids reallocation
+);
+
+bool is_hessenberg(const Matrix<double>& H, double tolerance = 1e-10);
+```
+
+---
+
+### Real Schur Decomposition
+
+```cpp
+#include "pla/decompos/schur.h"
+```
+
+```cpp
+struct RealSchurOptions<Scalar> {
+    Scalar tolerance = 1e-10;
+    Index max_iterations = 1000;
+    bool accumulate_u = false;
+};
+
+struct RealSchurResult<Scalar> {
+    Matrix<Scalar> T;         // quasi-upper triangular (Schur form)
+    Matrix<Scalar> U;         // orthogonal (only if accumulate_u = true)
+    Index iterations;
+    bool converged;
+    bool has_u;
+};
+
+RealSchurResult<double> real_schur(const Matrix<double>& A,
+                                   const RealSchurOptions<double>& opts = {});
+```
+
+---
+
+### Determinant
+
+```cpp
+#include "pla/decompos/determinant.h"
+
+double det = determinant(A);  // uses LU internally
+```
+
+---
+
+## Algorithms
+
+### Linear System Solve
+
+```cpp
+#include "pla/algorithms/solve.h"
+```
+
+Solves `Ax = b` or `AX = B` via LU decomposition.
+
+```cpp
+// Solve for single right-hand side
+Vector<double> x = solve(A, b);
+
+// Reuse existing LU factorization
+LUResult<double> lu = lu_blocked(A);
+Vector<double> x = solve(lu, b);
+
+// Solve for multiple right-hand sides (AX = B)
+Matrix<double> X = solve(A, B);
+```
+
+---
+
+### Matrix Inverse
+
+```cpp
+#include "pla/algorithms/inverse.h"
+
+Matrix<double> Ainv = inverse(A);  // throws if A is singular
+```
+
+---
+
+### Eigenvalues & Eigenvectors
+
+```cpp
+#include "pla/algorithms/eigen.h"
+```
+
+```cpp
+struct EigenOptions<Scalar> {
+    Scalar tolerance = 1e-10;
+    Index max_iterations = 1000;
+};
+
+// Eigenvalues only
+struct EigenvaluesResult<Scalar> {
+    std::vector<std::complex<Scalar>> values;
+    Matrix<Scalar> schur_form;
+    Index iterations;
+    bool converged;
+};
+
+// Eigenvalues + eigenvectors
+struct EigenResult<Scalar> {
+    std::vector<std::complex<Scalar>> values;
+    Matrix<Scalar> real_eigenvectors;
+    std::vector<bool> has_real_eigenvector;  // false for complex-conjugate pairs
+    Matrix<Scalar> schur_form;
+    Index iterations;
+    bool converged;
+};
+
+EigenvaluesResult<double> eigenvalues_general(const Matrix<double>& A,
+                                              const EigenOptions<double>& opts = {});
+
+EigenResult<double> eigen_general(const Matrix<double>& A,
+                                  const EigenOptions<double>& opts = {});
+```
+
+> **Note:** For real matrices with complex conjugate eigenvalue pairs, the corresponding entry in `has_real_eigenvector` is `false`.
+
+---
+
+## Execution Policy
+
+```cpp
+#include "pla/execution_policy.h"
+
 enum class Backend { Serial, Simd, Tbb };
-struct ExecutionPolicy { Backend backend; Index thread_count; Index block_size; };
+
+struct ExecutionPolicy {
+    Backend backend = Backend::Serial;
+    Index thread_count = 0;
+    Index block_size = 0;
+};
 ```
 
----
-
-### 📂 `include/blas1/`
-Заголовки для операцій BLAS Level 1 (вектор-вектор).  
-Приклади: `axpy` (y = αx + y), `dot` (скалярний добуток), `nrm2` (норма).
-
-### 📂 `include/blas2/`
-Заголовки для операцій BLAS Level 2 (матриця-вектор).  
-Приклади: `gemv` (y = αAx + βy), `ger` (A = αxy^T + A).
-
-### 📂 `include/blas3/`
-Заголовки для операцій BLAS Level 3 (матриця-матриця).  
-Приклад: `gemm` (C = αAB + βC).
-
-### 📂 `include/linalg_algorithms/`
-Заголовки для алгоритмів лінійної алгебри.  
-Приклади: розв'язання систем рівнянь, власні значення, SVD, QR-розклад.
+Pass an `ExecutionPolicy` to algorithms that support parallel execution.
 
 ---
 
-## 📁 `src/` - Реалізація
+## Error Handling
 
-Тут знаходяться файли `.cpp` з реалізацією методів.
+PLA throws on invalid operations. All exceptions derive from `pla::PLAException` → `std::runtime_error`.
 
-### 📂 `src/api/`
+| Exception | When thrown |
+|-----------|------------|
+| `PLAException` | Base class |
+| `SizeMismatchException` | Vector/matrix size mismatch |
+| `ShapeMismatchException` | Matrix shape mismatch in operation |
+| `NonSquareMatrixException` | Operation requires square matrix |
+| `SingularMatrixException` | Matrix is singular (solve/inverse) |
+| `OutOfRangeException` | `at()` called with invalid index |
 
-#### `main_api.cpp`
-Допоміжні функції API, якщо потрібні. Може бути порожнім.
-
----
-
-### 📂 `src/types/` ⭐ (Основна робоча папка студента)
-
-#### `vector.cpp`
-**Реалізація всіх методів класу `Vector`.**
-
-Містить 14 TODO для реалізації:
-1. `Vector::operator+` - додавання векторів
-2. `Vector::operator-` (бінарний) - віднімання векторів
-3. `Vector::operator-` (унарний) - зміна знаку
-4. `Vector::operator*` - множення на скаляр
-5. `Vector::operator/` - ділення на скаляр
-6. `operator*` (зовнішній) - `scalar * vector`
-7. `Vector::operator+=` - додавання з присвоєнням
-8. `Vector::operator-=` - віднімання з присвоєнням
-9. `Vector::operator*=` - множення на скаляр з присвоєнням
-10. `Vector::operator/=` - ділення на скаляр з присвоєнням
-11. `Vector::dot` - скалярний добуток
-12. `Vector::norm` - Евклідова норма
-13. `Vector::normalize` - нормалізація in-place
-14. `Vector::normalized` - повертає нормалізовану копію
-
-**Структура кожної функції**:
 ```cpp
-Vector Vector::operator+(const Vector& other) const {
-    // TODO: Step 1 - перевірка розмірів
-    if (dimension() != other.dimension()) {
-        throw SizeMismatchException(dimension(), other.dimension());
-    }
-    
-    // TODO: Step 2 - створити результат
-    Vector result(dimension());
-    
-    // TODO: Step 3 - обчислити поелементно
-    for (Index i = 0; i < dimension(); i++) {
-        result[i] = coordinates_[i] + other.coordinates_[i];
-    }
-    
-    // TODO: Step 4 - повернути результат
-    return result;
+try {
+    auto x = solve(A, b);
+} catch (const pla::SingularMatrixException& e) {
+    std::cerr << e.what();
+} catch (const pla::PLAException& e) {
+    std::cerr << e.what();
 }
 ```
 
-#### `matrix.cpp`
-**Реалізація всіх методів класу `Matrix`.**
-
-Містить 20 TODO для реалізації:
-1. `Matrix::operator+` - додавання матриць
-2. `Matrix::operator-` (бінарний) - віднімання матриць
-3. `Matrix::operator-` (унарний) - зміна знаку
-4. `Matrix::operator*` (скаляр) - множення на скаляр
-5. `Matrix::operator/` - ділення на скаляр
-6. `Matrix::operator*` (Vector) - **матриця × вектор** (BLAS Level 2)
-7. `Matrix::operator*` (Matrix) - **матриця × матриця** (BLAS Level 3)
-8. `operator*` (зовнішній) - `scalar * matrix`
-9. `Matrix::operator+=` - додавання з присвоєнням
-10. `Matrix::operator-=` - віднімання з присвоєнням
-11. `Matrix::operator*=` - множення на скаляр з присвоєнням
-12. `Matrix::operator/=` - ділення на скаляр з присвоєнням
-13. `Matrix::transpose` - транспонування (нова матриця)
-14. `Matrix::transpose_inplace` - транспонування на місці
-15. `Matrix::row` - отримати рядок
-16. `Matrix::col` - отримати стовпець
-17. `Matrix::fill` - заповнити значенням
-18. `Matrix::set_identity` - зробити одиничною
-19. `Matrix::identity` (static) - створити одиничну матрицю
-20. `Matrix::norm` - норма Фробеніуса
-
-**Найскладніші операції**:
-- **Matrix × Vector**: O(mn) складність, BLAS Level 2
-- **Matrix × Matrix**: O(mnp) складність, BLAS Level 3
+Alternatively, check `Status` / `StatusCode` values where returned (internal use).
 
 ---
 
-## 📁 `test/` - Тести
+## Quick Examples
 
-### 📂 `test/types/`
+### Basic matrix operations
 
-#### `test_types.cpp`
-Тести для класів `Vector` та `Matrix`.
+```cpp
+#include "pla/pla.h"
 
-**Базові тести** (працюють одразу):
-- `test_vector_basics()` - конструктори, індексація
-- `test_matrix_basics()` - конструктори, індексація
-- `test_shape_and_status()` - перевірка допоміжних структур
-- `test_execution_policy_defaults()` - перевірка налаштувань за замовчуванням
+pla::Matrix<double> A(3, 3);
+A.set_identity();
 
-**Тести операторів** (розкоментуй після реалізації):
-- `test_vector_operators_add()` - тест `Vector::operator+`
-- `test_vector_operators_multiply()` - тест `Vector::operator*` зі скаляром
-- `test_vector_dot()` - тест скалярного добутку
-- `test_vector_norm()` - тест норми
-- `test_matrix_identity_static()` - тест `Matrix::identity()`
-- `test_matrix_transpose()` - тест `Matrix::transpose()`
-- `test_matrix_vector_multiply()` - тест `A * x`
-- `test_matrix_multiply()` - тест `A * B`
+pla::Matrix<double> B(3, 3, 2.0);   // all 2.0
+auto C = A + B;
+auto D = A * B;
 
-**Як тестувати**:
-1. Реалізуй оператор/метод у `vector.cpp` або `matrix.cpp`
-2. Розкоментуй відповідний тест
-3. Збери проект: `cmake -B build && cmake --build build`
-4. Запусти тести: `./build/test_types` або `ctest --test-dir build`
-
----
-
-## 📁 `examples/` - Приклади використання
-
-### `basic_usage.cpp`
-Показує як користуватися бібліотекою:
-- Створення векторів і матриць
-- Операції з операторами: `a + b`, `A * x`, `A * B`
-- Скалярний добуток, норма, транспонування
-- Складені оператори: `a += b`, `a *= 2.0`
-
-**Запуск**:
-```bash
-g++ -std=c++17 -I./include examples/basic_usage.cpp ./build/libpla.a -o basic_usage
-./basic_usage
+std::cout << D;
 ```
 
-### `exception_handling.cpp`
-Показує обробку помилок через винятки:
-- `SizeMismatchException` - додавання векторів різних розмірів
-- `ZeroVectorException` - нормалізація нульового вектора
-- `ShapeMismatchException` - множення несумісних матриць
-- `IndexOutOfRangeException` - вихід за межі індексу
+### Solve a linear system
 
----
+```cpp
+pla::Matrix<double> A = { /* 3×3 */ };
+pla::Vector<double> b = {1.0, 2.0, 3.0};
 
-## 📄 Кореневі файли
+auto x = pla::solve(A, b);
 
-### `CMakeLists.txt`
-Конфігурація збірки проекту.
-
-**Побудова бібліотеки**:
-- Створює статичну бібліотеку `libpla.a`
-- Компілює `src/api/main_api.cpp`, `src/types/vector.cpp`, `src/types/matrix.cpp`
-- Стандарт: C++17
-
-**Збірка тестів**:
-- Виконуваний файл `test_types`
-- Лінкується з `libpla`
-
-**Команди збірки**:
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build
+// Or reuse factorization for multiple RHS:
+auto lu = pla::lu_blocked(A);
+auto x1 = pla::solve(lu, b1);
+auto x2 = pla::solve(lu, b2);
 ```
 
-### `README.md`
-Опис проекту, інструкції з використання.
+### QR decomposition
 
-### `LICENSE`
-Ліцензія проекту (MIT, GPL, тощо).
+```cpp
+auto [Q, R] = pla::qr(A);
 
-### `.gitignore`
-Список файлів/папок, які git ігнорує:
-- `build/` - результати збірки
-- `*.o`, `*.a` - об'єктні файли та бібліотеки
-- IDE налаштування (`.vscode/`, `.idea/`, тощо)
-
----
-
-## 🎯 Порядок роботи над проектом
-
-### Фаза 1: Прості операції (почни тут!)
-1. ✅ `Vector::operator+` - поелементне додавання
-2. ✅ `Vector::operator*` (скаляр) - множення кожного елементу
-3. ✅ `Vector::dot` - сума добутків елементів
-4. ✅ `Vector::norm` - корінь із суми квадратів
-5. ✅ `Matrix::fill` - проста заповнення циклом
-6. ✅ `Matrix::operator+` - поелементне додавання
-
-Розкоментуй тести після кожної реалізації!
-
-### Фаза 2: Середні операції
-7. ✅ `Vector::normalize` - ділення на норму (перевір на нуль!)
-8. ✅ `Matrix::transpose` - копіювання з перестановкою індексів
-9. ✅ `Matrix::identity` - заповнити діагональ одиницями
-10. ✅ Всі складені оператори `+=`, `-=`, `*=`, `/=`
-
-### Фаза 3: Складні операції (залиш на кінець!)
-11. ✅ **Matrix × Vector** - O(mn) алгоритм, BLAS Level 2
-12. ✅ **Matrix × Matrix** - O(mnp) алгоритм, BLAS Level 3 (найскладніше!)
-
----
-
-## 🔗 Зв'язки між файлами
-
-```
-Користувач
-    ↓
-#include "main_api.h"
-    ↓
-main_api.h → types/types.h → vector.h, matrix.h, exceptions.h, ...
-    ↓                              ↓
-    ↓                         vector.cpp
-    ↓                         matrix.cpp
-    ↓
-Лінкування з libpla.a
+// Verify: A ≈ Q * R
+auto Arecon = Q * R;
 ```
 
-**Ланцюжок компіляції**:
-1. Користувач підключає `main_api.h`
-2. `main_api.h` підключає `types/types.h`
-3. `types.h` підключає всі заголовки з `types/`
-4. Заголовки містять оголошення класів `Vector`, `Matrix`
-5. Реалізація в `vector.cpp`, `matrix.cpp` компілюється в `libpla.a`
-6. Користувач лінкується з `libpla.a`
+### Eigenvalues of a real matrix
 
----
+```cpp
+pla::EigenOptions<double> opts;
+opts.tolerance = 1e-12;
 
-## 📚 Додаткові ресурси
+auto result = pla::eigen_general(A, opts);
+if (!result.converged)
+    std::cerr << "Did not converge in " << result.iterations << " iterations\n";
 
-- `GUIDE_UK.md` - детальний посібник українською мовою
-- `REDESIGN_SUMMARY.md` - підсумок редизайну на оператори
-- Документація BLAS: https://netlib.org/blas/
-- Документація LAPACK: https://netlib.org/lapack/
+for (size_t i = 0; i < result.values.size(); ++i) {
+    std::cout << "λ" << i << " = " << result.values[i];
+    if (result.has_real_eigenvector[i])
+        std::cout << "  (real eigenvector available)";
+    std::cout << "\n";
+}
+```
 
----
+### Vector operations
 
-**Успіхів у реалізації! 🚀**
+```cpp
+pla::Vector<double> u = {1.0, 0.0, 0.0};
+pla::Vector<double> v = {0.0, 1.0, 0.0};
+
+double d = u.dot(v);          // 0.0
+auto w   = u + v;
+w.normalize();
+std::cout << w.norm();        // 1.0
+```
