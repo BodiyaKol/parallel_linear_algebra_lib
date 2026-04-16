@@ -13,3 +13,7 @@
 #include "pla/execution_policy.h"
 #include "pla/algorithms/solve.h"
 #include "pla/algorithms/inverse.h"
+
+#include "pla/decompos/hessenberg.h"
+#include "pla/decompos/schur.h"
+#include "pla/algorithms/eigen.h"
