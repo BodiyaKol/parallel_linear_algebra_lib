@@ -130,7 +130,7 @@ target_link_libraries(app PRIVATE pla::pla)
 ### main.cpp
 
 ```cpp
-#include <pla>   // adjust to your actual header path
+#include <pla/pla.h>
 
 int main() {
     // your code here
